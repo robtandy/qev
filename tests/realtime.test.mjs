@@ -3,21 +3,18 @@ import test from "node:test";
 import { Agent } from "../src/agent.js";
 import { LIVE_TICKS, MAX_DECISION_AGE_MS, prepareDecision, situation } from "../src/decisions.js";
 import { replies } from "./replies.mjs";
+import { observation } from "./observations.mjs";
 
 function fixture() {
-  const state = {
-    ready: true, alive: true, completed: false, paused: true, owned: true, epoch: 1, tick: 10,
-    remaining: 0, controlSession: 1, actionSerial: 0, actionTicks: 0, actionTicksLeft: 0, stopReason: null,
-    player: { health: 100, armor: 0, ammo: 25, weapon: "shotgun", position: [0, 0, 24], yaw: 0, pitch: 0, grounded: true },
-    enemies: [{ slot: 7, generation: 1, kind: "monster_army", position: [80, 0, 24], bearingRight: 0, distance: 80, visible: true }], pickups: [],
-  };
+  const state = observation();
+  state.epoch = 1; state.tick = state.screen.tick = 10; state.player.health = 100; state.player.ammo = 25;
   const calls = [], actions = [];
   let pauses = 0, rejectAction = false;
   const engine = {
     snapshot: () => structuredClone(state),
     pause() { pauses++; state.paused = true; state.controlSession++; state.actionTicksLeft = 0; },
     startAuto() { state.paused = false; state.owned = true; return ++state.controlSession; },
-    probe: (p) => ({ blocked: false, supported: true, hazard: false, end: [p.dx * p.ticks * 200 / 60, p.dy * p.ticks * 200 / 60, 24], lineOfSightAtEndpoint: p.slot > 0 ? true : null }),
+    probe() { assert.fail("No geometry queries, including application-time probes"); },
     applyLive(p, session) {
       actions.push({ p, session });
       if (rejectAction) return false;
@@ -29,7 +26,7 @@ function fixture() {
   const agent = new Agent({ engine, getModel: () => model });
   function advance(n) {
     assert.equal(state.paused, false);
-    state.tick += n;
+    state.tick += n; state.screen.tick = state.tick; state.screen.frame++;
     state.actionTicks += Math.min(n, state.actionTicksLeft);
     state.actionTicksLeft = Math.max(0, state.actionTicksLeft - n);
     if (!state.actionTicksLeft) state.stopReason = "Action lease expired.";
@@ -44,15 +41,12 @@ function fixture() {
 }
 async function decide(f) { const p = f.agent.score({ realtime: true }); f.resolveScore(); await p; return f.agent.applyLive(); }
 
-test("real-time candidates disclose a longer bounded horizon and use matching probes", () => {
-  const f = fixture(), probes = [];
-  const result = prepareDecision(f.state, (p) => { probes.push(p); return f.engine.probe(p); }, null, { realtime: true, heldAction: "Strafe left" });
-  assert.ok(probes.every((p) => p.ticks === LIVE_TICKS));
-  assert.ok(result.eligible.every((c) => c.params.ticks === LIVE_TICKS));
-  assert.match(result.requests[0].state, /world continues during scoring/);
-  assert.match(result.requests[0].state, /Currently holding: Strafe left/);
-  assert.match(result.requests[0].state, /up to 750 ms/);
-  assert.equal(result.eligible.find((c) => c.id === "scan-left").params.yaw, 90);
+test("real-time tactics disclose their bounded horizon and held action without probes", () => {
+  const f = fixture(), result = prepareDecision(f.state, null, { realtime: true, heldAction: "Strafe left" });
+  assert.ok(result.eligible.every(c => c.params.ticks === LIVE_TICKS));
+  assert.match(result.requests[0].state, /Live, holding Strafe left/);
+  assert.match(result.requests[0].state, /750ms/);
+  assert.equal(result.eligible.find(c => c.id === "turn-left").params.yawRate, 90);
 });
 
 test("asynchronous scoring allows advancing ticks without pausing or fabricating a fresh timestamp", async () => {
@@ -109,14 +103,15 @@ test("same-level teleport resumes with a new session and discards the old pendin
   const oldSession = f.agent.liveSession;
   const pending = f.agent.score({ realtime: true });
   f.state.epoch++; f.state.controlSession++; f.state.paused = true;
-  f.state.player.position = [900, 0, 24]; f.state.stopReason = "Player teleported.";
+  f.state.stopReason = "Player teleported.";
   assert.equal(f.agent.observeLive(f.engine.snapshot()), true);
   assert.equal(f.state.paused, false);
   assert.notEqual(f.agent.liveSession, oldSession);
   f.resolveScore();
   assert.equal(await pending, null);
   assert.equal(f.actions.length, 0);
-  assert.equal(f.agent.navigation.summary(f.state).rememberedCells, 2);
+  assert.equal(f.agent.navigation, undefined);
+  assert.equal(f.agent.observations.epoch, f.state.epoch);
   f.agent.pause(); f.state.stopReason = "Player teleported.";
   assert.equal(f.agent.observeLive(f.engine.snapshot()), false, "manual Pause must never auto-resume");
 });
@@ -155,7 +150,8 @@ test("expired commands record active ticks separately from the later observation
   assert.equal(record.status, "executed");
   assert.equal(f.state.paused, false);
   assert.equal(f.agent.active, null);
-  assert.match(situation(f.state, f.agent.memory), /observed interval after applying it/);
+  assert.equal(f.agent.observations.actions.at(-1).ticksApplied, 45);
+  assert.match(situation(f.state, f.agent.observations.describe(f.state)), /Since forward:/);
 });
 
 test("pausing releases the active command and invalidates the pending replacement", async () => {
@@ -172,46 +168,31 @@ test("pausing releases the active command and invalidates the pending replacemen
   assert.equal(f.actions.length, 1);
 });
 
-test("delayed repeated-forward decisions keep the held course instead of chasing the old camera yaw", async () => {
-  const f = fixture(); f.state.enemies = []; f.agent.startLive(); // Isolate steering from threat-aware shortlisting.
-  let pending = f.agent.score({ realtime: true });
-  let index = f.agent.current.eligible.findIndex(c => c.id === "forward-left");
-  assert.ok(index >= 0);
-  f.resolveScore(index); await pending; f.agent.applyLive();
-  const first = f.agent.active;
-  assert.equal(first.eligible[first.selectedIndex].params.yaw, 45);
-  for (const [viewAtObserve, viewAtReply, position] of [[0, 27, [20,20,24]], [27,45,[40,40,24]], [45,45,[60,60,24]]]) {
-    f.state.player.yaw = viewAtObserve;
-    const source = f.agent.active.id;
-    pending = f.agent.score({ realtime: true });
-    const r = f.agent.current;
-    assert.equal(r.steering.source, "held-course");
-    assert.equal(r.steering.sourceDecisionId, source);
-    assert.equal(r.steering.viewHeading, viewAtObserve);
-    index = r.eligible.findIndex(c => c.id === "forward");
-    assert.ok(index >= 0);
-    assert.equal(r.eligible[index].params.yaw, 45);
-    f.advance(9); f.state.player.yaw = viewAtReply; f.state.player.position = position;
-    f.resolveScore(index); await pending;
+test("delayed forward choices remain relative inputs and never chase stale absolute camera angles", async () => {
+  const f = fixture(); f.agent.startLive();
+  for (let i = 0; i < 4; i++) {
+    const pending = f.agent.score({ realtime: true }), r = f.agent.current;
+    const index = r.eligible.findIndex(c => c.id === "forward");
+    f.advance(9); f.resolveScore(index); await pending;
     assert.equal(f.agent.applyLive(), true);
-    assert.strictEqual(f.actions.at(-1).p, r.eligible[index].params, "apply the exact scored vector, not a post-score correction");
-    assert.equal(f.actions.at(-1).p.yaw, 45);
+    assert.strictEqual(f.actions.at(-1).p, r.selected.params);
+    assert.equal(r.selected.params.forward, 1); assert.equal(r.selected.params.ref, 0);
+    assert.equal(r.selected.params.yawRate, 0); assert.equal(r.selected.params.yaw, undefined);
+    assert.equal(r.steering, undefined);
   }
 });
 
 for (const change of ["expired", "replaced", "pause-resume"]) {
-  test(`${change} command does not supply a stale steering reference`, async () => {
+  test(`${change} command does not claim it is still holding the earlier input`, async () => {
     const f = fixture(); f.state.enemies = []; f.agent.startLive();
     let pending = f.agent.score({ realtime: true });
-    const index = f.agent.current.eligible.findIndex(c => c.id === "forward-left");
+    const index = f.agent.current.eligible.findIndex(c => c.id === "forward");
     f.resolveScore(index); await pending; f.agent.applyLive();
     if (change === "expired") f.advance(LIVE_TICKS);
     if (change === "replaced") f.state.actionSerial++;
     if (change === "pause-resume") { f.agent.pause(); f.agent.startLive(); }
-    f.state.player.yaw = 17;
     pending = f.agent.score({ realtime: true });
-    assert.equal(f.agent.current.steering.source, "view");
-    assert.equal(f.agent.current.steering.heading, 17);
+    assert.match(f.agent.current.sharedState, /Live, holding nothing/);
     f.resolveScore(); await pending;
     f.agent.pause();
   });

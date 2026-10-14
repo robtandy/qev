@@ -1,11 +1,5 @@
-Qev engine modifications, 2026-10-04.
-SPDX-License-Identifier: GPL-2.0-or-later
-Base: GMH-Code/Qwasm f56b5e71e4be8effede29bae1785a5306dcc0249.
-Original Quake source: Copyright (C) 1996-1997 Id Software, Inc.
-See engine/README.md and engine/COPYING for source and license notices.
-
 diff --git a/WinQuake/cl_input.c b/WinQuake/cl_input.c
-index b407ea2..c51003a 100644
+index b407ea2..96c9f57 100644
 --- a/WinQuake/cl_input.c
 +++ b/WinQuake/cl_input.c
 @@ -54,6 +54,24 @@ kbutton_t	in_up, in_down;
@@ -23,11 +17,11 @@ index b407ea2..c51003a 100644
 +	in_impulse = 0;
 +}
 +
-+void Qev_Attack(int down)
++void Qev_Buttons(int attack, int jump, int impulse)
 +{
-+	in_attack.state = down ? 1 : 0;
-+	in_jump.state = 0;
-+	in_impulse = 0;
++	in_attack.state = attack ? 1 : 0;
++	in_jump.state = jump ? 1 : 0;
++	in_impulse = impulse;
 +}
 +
  
@@ -57,10 +51,10 @@ index 5812143..a626d0d 100644
  	// send the unreliable message
  		CL_SendMove (&cmd);
 diff --git a/WinQuake/d_edge.c b/WinQuake/d_edge.c
-index 7a28816..0e69546 100644
+index 7a28816..b61fc24 100644
 --- a/WinQuake/d_edge.c
 +++ b/WinQuake/d_edge.c
-@@ -168,6 +168,17 @@ void D_CalcGradients (msurface_t *pface)
+@@ -168,6 +168,18 @@ void D_CalcGradients (msurface_t *pface)
  D_DrawSurfaces
  ==============
  */
@@ -70,7 +64,8 @@ index 7a28816..0e69546 100644
 +{
 +	espan_t *span;
 +	if (!qev_pixel_capture) return;
-+	Qev_DrawEntity(s->insubmodel ? s->entity : NULL);
++	Qev_DrawSurface((s->flags & SURF_DRAWBACKGROUND) ? NULL : s->data,
++		s->insubmodel ? s->entity : NULL);
 +	for (span = s->spans; span; span = span->pnext)
 +		Qev_PixelsSpan(d_viewbuffer + screenwidth * span->v + span->u, span->count);
 +}
@@ -78,7 +73,7 @@ index 7a28816..0e69546 100644
  void D_DrawSurfaces (void)
  {
  	surf_t			*s;
-@@ -194,6 +205,7 @@ void D_DrawSurfaces (void)
+@@ -194,6 +206,7 @@ void D_DrawSurfaces (void)
  
  			D_DrawSolidSurface (s, (int)s->data & 0xFF);
  			D_DrawZSpans (s->spans);
@@ -86,7 +81,7 @@ index 7a28816..0e69546 100644
  		}
  	}
  	else
-@@ -322,6 +334,7 @@ void D_DrawSurfaces (void)
+@@ -322,6 +335,7 @@ void D_DrawSurfaces (void)
  					R_TransformFrustum ();
  				}
  			}
@@ -270,6 +265,27 @@ index f72ddc1..2844ae3 100644
  	SCR_UpdateScreen ();
  
  	if (host_speeds.value)
+diff --git a/WinQuake/model.c b/WinQuake/model.c
+index e3bd9fb..851964a 100644
+--- a/WinQuake/model.c
++++ b/WinQuake/model.c
+@@ -1449,6 +1449,7 @@ void Mod_LoadAliasModel (model_t *mod, void *buffer)
+ 	dtriangle_t			*pintriangles;
+ 	int					version, numframes, numskins;
+ 	int					size;
++	const int qev_model_bytes = com_filesize;
+ 	daliasframetype_t	*pframetype;
+ 	daliasskintype_t	*pskintype;
+ 	maliasskindesc_t	*pskindesc;
+@@ -1639,6 +1640,8 @@ void Mod_LoadAliasModel (model_t *mod, void *buffer)
+ 		}
+ 	}
+ 
++	/* Cache descriptive annotations for exact known assets, not entity state. */
++	Qev_AliasModel (mod, buffer, qev_model_bytes);
+ 	mod->type = mod_alias;
+ 
+ // FIXME: do this right
 diff --git a/WinQuake/pr_edict.c b/WinQuake/pr_edict.c
 index 9680bb7..b70b96e 100644
 --- a/WinQuake/pr_edict.c
@@ -331,6 +347,52 @@ index 220f309..48c2188 100644
 +	Qev_EndView();
  
  	V_SetContentsColor (r_viewleaf->contents);
+ 
+diff --git a/WinQuake/snd_mix.c b/WinQuake/snd_mix.c
+index d31f6c9..1ee76fc 100644
+--- a/WinQuake/snd_mix.c
++++ b/WinQuake/snd_mix.c
+@@ -348,7 +348,7 @@ void SND_PaintChannelFrom8 (channel_t *ch, sfxcache_t *sc, int count)
+ 	int 	data;
+ 	int		*lscale, *rscale;
+ 	unsigned char *sfx;
+-	int		i;
++	int		i, qev_left = 0, qev_right = 0;
+ 
+ 	if (ch->leftvol > 255)
+ 		ch->leftvol = 255;
+@@ -364,8 +364,10 @@ void SND_PaintChannelFrom8 (channel_t *ch, sfxcache_t *sc, int count)
+ 		data = sfx[i];
+ 		paintbuffer[i].left += lscale[data];
+ 		paintbuffer[i].right += rscale[data];
++		if (abs(lscale[data]) > qev_left) qev_left = abs(lscale[data]);
++		if (abs(rscale[data]) > qev_right) qev_right = abs(rscale[data]);
+ 	}
+-	
++	Qev_AudibleSound(ch->sfx->name, qev_left, qev_right);
+ 	ch->pos += count;
+ }
+ 
+@@ -378,7 +380,7 @@ void SND_PaintChannelFrom16 (channel_t *ch, sfxcache_t *sc, int count)
+ 	int left, right;
+ 	int leftvol, rightvol;
+ 	signed short *sfx;
+-	int	i;
++	int	i, qev_left = 0, qev_right = 0;
+ 
+ 	leftvol = ch->leftvol;
+ 	rightvol = ch->rightvol;
+@@ -391,8 +393,10 @@ void SND_PaintChannelFrom16 (channel_t *ch, sfxcache_t *sc, int count)
+ 		right = (data * rightvol) >> 8;
+ 		paintbuffer[i].left += left;
+ 		paintbuffer[i].right += right;
++		if (abs(left) > qev_left) qev_left = abs(left);
++		if (abs(right) > qev_right) qev_right = abs(right);
+ 	}
+-
++	Qev_AudibleSound(ch->sfx->name, qev_left, qev_right);
+ 	ch->pos += count;
+ }
  
 diff --git a/WinQuake/sys_sdl.c b/WinQuake/sys_sdl.c
 index 22d75f4..7522030 100644

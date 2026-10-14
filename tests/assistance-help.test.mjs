@@ -24,20 +24,23 @@ test('help preview uses a scrollable bounded area in short and narrow viewports'
     assert.ok(bottom <= anchor.top - 6 || p.top >= anchor.bottom + 6);
   }
 });
-test('the assistance explanation is authored once and describes both the purpose and the limits', () => {
+test('the single-controller explanation is authored once and describes its purpose and limits', () => {
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
-  assert.match(html, /<label for="assistance">Assistance<\/label><button id="assistance-help-button"/);
+  assert.match(html, /<span>How it plays<\/span><button id="assistance-help-button"/);
+  assert.doesNotMatch(html, /<select id="assistance"/);
   assert.match(html, /id="assistance-help-button"[^>]*type="button"[^>]*aria-haspopup="dialog"[^>]*aria-controls="assistance-help assistance-help-preview"/);
   assert.match(html, /<span aria-hidden="true">\?<\/span>/);
   const dialog = html.match(/<dialog id="assistance-help"[\s\S]*?<\/dialog>/)[0];
   assert.match(dialog, /aria-labelledby="assistance-help-title" aria-describedby="assistance-help-intro"/);
   assert.match(dialog, /Assistance is OK here/);
   assert.match(dialog, /testing the model’s decisions, not its ability to execute/);
-  assert.match(dialog, /survival-biased actions/);
-  assert.match(dialog, /14 fixed movement\/look\/fire inputs/);
-  assert.match(dialog, /not RGB-only vision/);
-  assert.match(dialog, /Compare runs with the same setting/);
-  assert.match(dialog, /chosen model action is never silently replaced/);
+  assert.match(dialog, /player-observable information/);
+  assert.match(dialog, /never picks the nearest enemy, checks hidden routes, vetoes danger/);
+  assert.match(dialog, /not RGB\/audio recognition/);
+  assert.match(dialog, /There is no privileged legacy mode/);
+  assert.match(dialog, /silently replaces the chosen action/);
+  assert.match(dialog, /does not track through walls/);
+  assert.match(dialog, /memory are bounded/);
   assert.equal((html.match(/Assistance is OK here/g) || []).length, 1);
   assert.match(html, /id="assistance-help-preview"[^>]*aria-modal="false"[^>]*hidden/);
 });

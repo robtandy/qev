@@ -1,5 +1,3 @@
-import { assistanceOf } from "./assistance.js";
-
 /** One stopped-world decision plus its bounded action. Stop cancels both phases. */
 export class Stepper {
   constructor(agent, onChange = () => {}) {
@@ -26,7 +24,7 @@ export class Stepper {
       let record = agent.current;
       const fresh = record?.status === "scored" && record.mode === "inspection" &&
         record.before.epoch === before.epoch && record.before.tick === before.tick &&
-        record.generation === agent.generation && agent.scoredModel === agent.getModel() && record.assistance === assistanceOf(before);
+        record.generation === agent.generation && agent.scoredModel === agent.getModel();
       if (!fresh) record = await agent.score();
       if (this.active !== job || !record) return null;
       // Agent.step independently rechecks world/model/generation freshness at application.

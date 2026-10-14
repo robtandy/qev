@@ -21,7 +21,7 @@ export class AssistanceHelp {
     this.buttonHovered = this.previewHovered = this.anchorHovered = this.suppressed = false;
     this.anchor = button.closest('.assistance-setting') || button;
     this.timer = null;
-    // One authored explanation; no duplicated IDs or divergent On/Off descriptions.
+    // One authored explanation; no duplicated IDs or divergent preview/modal copy.
     const copy = dialog.querySelector('.help-copy').cloneNode(true);
     for (const node of copy.querySelectorAll('[id]')) node.removeAttribute('id');
     preview.querySelector('.help-copy').replaceChildren(...copy.childNodes);
@@ -33,7 +33,7 @@ export class AssistanceHelp {
     button.addEventListener('focus', () => this.showPreview());
     button.addEventListener('blur', () => this.scheduleHide());
     button.addEventListener('click', () => this.openDialog());
-    // Keep the preview reachable across the field, without covering its dropdown.
+    // Keep the preview reachable across the label and trigger.
     this.anchor.addEventListener('pointerenter', event => { if (event.pointerType === 'mouse') { this.anchorHovered = true; this.clearTimer(); } });
     this.anchor.addEventListener('pointerleave', () => { this.anchorHovered = false; this.scheduleHide(); });
     preview.addEventListener('pointerenter', () => { this.previewHovered = true; this.clearTimer(); });

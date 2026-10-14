@@ -14,29 +14,29 @@ export async function checkHelp({ evaluate, check, call, until, onScreenshot = a
     await call('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode, modifiers, ...(key === 'Enter' ? { text: '\r' } : key === ' ' ? { text: ' ' } : {}) });
     await call('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode, modifiers });
   };
-  await check('assistance has a circled, separately labelled help button even before game/model loading', `
-    const b=document.querySelector('#assistance-help-button'), select=document.querySelector('#assistance');
+  await check('the single controller has a circled help button before game/model loading, with no mode choice', `
+    const b=document.querySelector('#assistance-help-button');
     const r=b.getBoundingClientRect(), circle=b.querySelector('span');
     return !b.disabled && b.type==='button' && b.getAttribute('aria-haspopup')==='dialog' &&
-      b.getAttribute('aria-label')==='What is assistance?' && b.getAttribute('aria-expanded')==='false' &&
-      !b.closest('label') && select.labels.length===1 && select.labels[0].textContent==='Assistance' &&
+      b.getAttribute('aria-label')==='How Qev plays' && b.getAttribute('aria-expanded')==='false' &&
+      !b.closest('label') && !document.querySelector('#assistance') &&
       r.width>=24 && r.height>=24 && circle.textContent==='?' && getComputedStyle(circle).borderRadius==='50%' &&
       document.querySelector('#reset').disabled && !qev.engine && !qev.model;
   `);
   await evaluate("document.querySelector('#backend').focus();window.helpFocus=document.activeElement");
   await move('#assistance-help-button');
   await until(() => evaluate("!document.querySelector('#assistance-help-preview').hidden"));
-  await check('hover opens the explanation without stealing focus, changing assistance, or loading a model', `
+  await check('hover opens the explanation without stealing focus or loading a model', `
     const p=document.querySelector('#assistance-help-preview'), d=document.querySelector('#assistance-help');
     const r=p.getBoundingClientRect(), field=document.querySelector('.assistance-setting').getBoundingClientRect();
     return (r.top>=field.bottom+5 || r.bottom<=field.top-5) && !p.hidden && !d.open && document.activeElement===helpFocus && !qev.engine && !qev.model &&
-      document.querySelector('#assistance').value==='assisted' && document.querySelector('#assistance-help-button').getAttribute('aria-expanded')==='true' &&
+      qev.controlMode==='player-observable' && document.querySelector('#assistance-help-button').getAttribute('aria-expanded')==='true' &&
       p.querySelector('.help-copy').textContent===d.querySelector('.help-copy').textContent &&
       p.textContent.includes('Assistance is OK here.') && p.textContent.includes('not its ability to execute') &&
       r.left>=8 && r.right<=innerWidth-8 && r.top>=8 && r.bottom<=innerHeight-8;
   `);
-  await move('#assistance'); await wait(250);
-  await check('the preview remains reachable across the assistance field without covering its dropdown', `return !document.querySelector('#assistance-help-preview').hidden;`);
+  await move('.assistance-setting'); await wait(250);
+  await check('the preview remains reachable across the explanation trigger', `return !document.querySelector('#assistance-help-preview').hidden;`);
   await move('#assistance-help-preview .help-copy'); await wait(250);
   await check('the hover panel stays open while the pointer is over its content', `return !document.querySelector('#assistance-help-preview').hidden;`);
   await onScreenshot('preview');
@@ -60,7 +60,7 @@ export async function checkHelp({ evaluate, check, call, until, onScreenshot = a
     const d=document.querySelector('#assistance-help'), ids=[...document.querySelectorAll('[id]')].map(e=>e.id);
     return d.open && d.matches(':modal') && d.contains(document.activeElement) && document.querySelector('#assistance-help-preview').hidden &&
       document.body.classList.contains('help-modal-open') && ids.length===new Set(ids).size &&
-      d.textContent.includes('Compare runs with the same setting') && d.textContent.includes('not RGB-only vision');
+      d.textContent.includes('There is no privileged legacy mode') && d.textContent.includes('not RGB/audio recognition');
   `);
   await check('modal background controls cannot take focus', `
     document.querySelector('#backend').focus();return document.querySelector('#assistance-help').contains(document.activeElement);

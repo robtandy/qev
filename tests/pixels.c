@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+#include <stdlib.h>
 
 static unsigned char buffer[32 * 24], other[64 * 48];
 static void begin(void) { assert(Qev_PixelsBegin(buffer, 32, 30, 24, 2, 2, 24, 16)); }
@@ -31,6 +32,32 @@ static void holes(void) {
     begin(); rect(2, 10, 5, 8, 10); Qev_PixelsTag(0); Qev_PixelsWrite(buffer + 10 * 32 + 14); Qev_PixelsEnd();
     const qev_pixel_object_t *o = &Qev_PixelsView()->objects[2];
     assert(o->count == 79 && !o->at_aim && o->left == 8 && o->right == 16);
+}
+static void aim(void) {
+    begin(); rect(2, 10, 5, 8, 10); rect(0, 12, 7, 4, 6); Qev_PixelsEnd();
+    const qev_pixel_object_t *o = &Qev_PixelsView()->objects[2];
+    int x = o->aim_x + 2, y = o->aim_y + 2;
+    assert(x >= 10 && x < 18 && y >= 5 && y < 15);
+    assert(x < 12 || x >= 16 || y < 7 || y >= 13); /* Never aim inside the erased center. */
+    assert(!o->at_aim && o->count == 56);
+    unsigned char *tall = malloc(QEV_PIXEL_LIMIT);
+    assert(tall && Qev_PixelsBegin(tall, 1, 1, QEV_PIXEL_LIMIT, 0, 0, 1, QEV_PIXEL_LIMIT));
+    Qev_PixelsTag(2); Qev_PixelsWrite(tall); Qev_PixelsWrite(tall + QEV_PIXEL_LIMIT - 1); Qev_PixelsEnd();
+    assert(Qev_PixelsView()->objects[2].count == 2); /* Extreme aspect must not overflow distance arithmetic. */
+    free(tall);
+}
+static void scene(void) {
+    begin(); rect(QEV_SURFACE_FIRST + QEV_LAVA, 2, 2, 24, 16);
+    rect(QEV_SURFACE_FIRST + QEV_FLOOR, 2, 13, 8, 5);
+    rect(2, 10, 13, 8, 5); rect(0, 18, 13, 8, 5); Qev_PixelsEnd();
+    const qev_pixel_view_t *v = Qev_PixelsView();
+    assert(v->scene[6][QEV_FLOOR] == 40 && v->scene[6][QEV_LAVA] == 0);
+    assert(v->scene[7][QEV_LAVA] == 0 && v->scene[8][QEV_LAVA] == 0);
+    assert(v->objects[2].count == 40); /* Actors/weapon/unknown pixels occlude terrain labels too. */
+    int lava = 0, floor = 0;
+    for (int i = 0; i < 9; i++) { lava += v->scene[i][QEV_LAVA]; floor += v->scene[i][QEV_FLOOR]; }
+    assert(lava == 24*11 && floor == 40);
+    begin(); Qev_PixelsEnd(); assert(!Qev_PixelsView()->scene[6][QEV_FLOOR]);
 }
 static void clipping(void) {
     begin(); rect(2, 0, 0, 30, 24); Qev_PixelsEnd();
@@ -78,6 +105,8 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[1], "occlusion")) occlusion();
     else if (!strcmp(argv[1], "holes")) holes();
     else if (!strcmp(argv[1], "clipping")) clipping();
+    else if (!strcmp(argv[1], "aim")) aim();
+    else if (!strcmp(argv[1], "scene")) scene();
     else if (!strcmp(argv[1], "reset")) reset();
     else if (!strcmp(argv[1], "invalid")) invalid();
     else if (!strcmp(argv[1], "warp")) warp();

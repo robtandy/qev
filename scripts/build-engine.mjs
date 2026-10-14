@@ -2,12 +2,15 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { animationHeader } from "./animation-data.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const revision = "f56b5e71e4be8effede29bae1785a5306dcc0249";
 const source = resolve(root, "build/qwasm");
 const sdk = resolve(root, "build/tools/emsdk");
-const output = resolve(root, "build/engine");
+const evaluation = process.argv.includes("--evaluation");
+if (process.argv.slice(2).some(arg => arg !== "--evaluation")) throw new Error("Usage: node scripts/build-engine.mjs [--evaluation]");
+const output = resolve(root, evaluation ? "build/engine-evaluation" : "build/engine");
 function run(command, args, cwd = root) {
   const r = spawnSync(command, args, { cwd, stdio: "inherit" });
   if (r.error) throw r.error;
@@ -24,10 +27,11 @@ if (!existsSync(`${source}/.git`)) {
 const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: source, encoding: "utf8" }).stdout.trim();
 if (head !== revision) throw new Error("Unexpected build/qwasm revision; refusing to overwrite another checkout.");
 // Only reset the generated source copy, never a user's fork or the project working tree.
-const patched = ["quakedef.h", "sys_sdl.c", "cl_main.c", "cl_input.c", "host.c", "pr_edict.c", "r_main.c", "d_edge.c", "d_polyse.c", "d_sprite.c", "d_part.c", "d_scan.c"];
+const patched = ["quakedef.h", "sys_sdl.c", "cl_main.c", "cl_input.c", "host.c", "model.c", "pr_edict.c", "r_main.c", "d_edge.c", "d_polyse.c", "d_sprite.c", "d_part.c", "d_scan.c", "snd_mix.c"];
 run("git", ["restore", "--source=HEAD", "--", ...patched.map((f) => `WinQuake/${f}`)], source);
 run("git", ["apply", resolve(root, "engine/qwasm.patch")], source);
-for (const file of ["qev_bridge.c", "qev_bridge.h", "qev_pixels.c", "qev_pixels.h"]) cpSync(resolve(root, "engine", file), resolve(source, "WinQuake", file));
+for (const file of ["qev_bridge.c", "qev_bridge.h", "qev_pixels.c", "qev_pixels.h", "qev_animation.c", "qev_animation.h", "qev_recenter.c", "qev_recenter.h"]) cpSync(resolve(root, "engine", file), resolve(source, "WinQuake", file));
+writeFileSync(resolve(source, "WinQuake/qev_animation_data.h"), animationHeader(JSON.parse(readFileSync(resolve(root, "engine/animation-labels.json"), "utf8"))));
 // No --preload-file: proprietary game assets are supplied locally in the browser, never built in.
 const flags = [
   "-O2", "-sUSE_SDL=2", "-sINITIAL_MEMORY=64MB", "-sSTACK_SIZE=2MB", "-sALLOW_MEMORY_GROWTH=1",
@@ -37,9 +41,9 @@ const flags = [
   "-sEXIT_RUNTIME=0", "-lidbfs.js",
 ].join(" ");
 const makefile = readFileSync(resolve(source, "WinQuake/Makefile.emscripten"), "utf8")
-  .replace("OBJS := $(SRCS:.c=.o)", "SRCS += qev_bridge.c qev_pixels.c\nqev_bridge.o qev_pixels.o: CFLAGS += -fno-fast-math -Werror=implicit-function-declaration\nOBJS := $(SRCS:.c=.o)");
+  .replace("OBJS := $(SRCS:.c=.o)", `SRCS += qev_bridge.c qev_pixels.c qev_animation.c qev_recenter.c\nqev_bridge.o qev_pixels.o qev_animation.o qev_recenter.o: CFLAGS += -fno-fast-math -Werror=implicit-function-declaration ${evaluation ? "-DQEV_EVALUATION" : ""}\nOBJS := $(SRCS:.c=.o)`);
 writeFileSync(resolve(source, "WinQuake/Makefile.qev"), makefile);
 run("bash", ["-c", 'source "$1/emsdk_env.sh" >/dev/null 2>&1; exec make -f Makefile.qev -j4 all "TARGET=$2/qwasm.mjs" "LDFLAGS=$3"', "qev-build", sdk, output, flags], resolve(source, "WinQuake"));
 cpSync(resolve(source, "gnu.txt"), resolve(output, "QWASM-LICENSE.txt"));
-writeFileSync(resolve(output, "build.json"), JSON.stringify({ qwasm: revision, emscripten: "3.1.74", renderer: "software", assetsEmbedded: false }, null, 2) + "\n");
+writeFileSync(resolve(output, "build.json"), JSON.stringify({ qwasm: revision, emscripten: "3.1.74", renderer: "software", assetsEmbedded: false, evaluationOnly: evaluation }, null, 2) + "\n");
 console.log(`Engine built in ${output}. No game assets were embedded.`);

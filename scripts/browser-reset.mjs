@@ -6,6 +6,7 @@ export async function checkReset({ evaluate, check, until, call, bindKillForTest
     await idle();
   };
   const reset = async () => {
+    await idle();
     await evaluate("resetTest.beforeReset=qev.engine.snapshot();document.querySelector('#reset').click()");
     await until(() => evaluate("qev.engine.snapshot().epoch!==resetTest.beforeReset.epoch && qev.engine.snapshot().ready && !document.querySelector('#reset').disabled"));
   };
@@ -24,8 +25,7 @@ export async function checkReset({ evaluate, check, until, call, bindKillForTest
       return new Promise((resolve,reject)=>{resetTest.releaseLoad=()=>{resetTest.deferLoad=false;resetTest.releaseLoad=null;load().then(resolve,reject);};});
     };
     resetTest.answer=(index,id='wait')=>{const c=resetTest.calls[index];if(!c || c.done)return;c.done=true;
-      const keys=Object.keys(c.requests[0].questions.action.criteria), choice=keys.includes(id)?id:keys[0];
-      c.resolve([{answers:{action:{type:'choice',choice,probabilities:Object.fromEntries(keys.map(k=>[k,k===choice?1:0]))}}}]);};`);
+      c.resolve(testDecisionReplies(c.record,{action:id}));};`);
   try {
     await reset();
     await check('Reset works without selecting or downloading a model and does not unlock audio', `
@@ -35,24 +35,23 @@ export async function checkReset({ evaluate, check, until, call, bindKillForTest
         resetTest.resumes===0 && document.querySelector('#model').value==='';
     `);
     await fresh();
-    await evaluate(`document.querySelector('#assistance').value='unassisted';document.querySelector('#assistance').dispatchEvent(new Event('change',{bubbles:true}));
-      document.querySelector('[data-priority=get-supplies] [data-move=up]').click();
+    await evaluate(`document.querySelector('[data-priority=get-supplies] [data-move=up]').click();
       resetTest.order=JSON.stringify(qev.priorityOrder);
-      resetTest.model={info:{backend:'reset-regression'},decideMany(requests){return new Promise(resolve=>resetTest.calls.push({requests,resolve}));}};
+      resetTest.model={info:{backend:'reset-regression'},decideMany(requests){return new Promise(resolve=>resetTest.calls.push({requests,resolve,record:qev.agent.current}));}};
       qev.agent.getModel=()=>resetTest.model;qev.agent.invalidate()`);
     await until(() => evaluate("!document.querySelector('#step').disabled"));
     await evaluate("document.querySelector('#step').click();resetTest.executed=qev.agent.current;resetTest.answer(resetTest.calls.length-1,'fire')");
     await until(() => evaluate("!qev.agent.busy && resetTest.executed.status==='executed'"));
     await evaluate("resetTest.historyState=JSON.stringify(resetTest.executed.requests);resetTest.resumeCount=resetTest.resumes");
     await reset();
-    await check('Reset restores the current level/loadout while preserving model, assistance, priorities and historical requests', `
+    await check('Reset restores the current level/loadout while preserving model, priorities and historical requests', `
       const s=qev.engine.snapshot();
-      return s.map==='qev_encounter' && s.difficulty===2 && s.assistance==='unassisted' && s.paused && s.alive &&
+      return s.map==='qev_encounter' && s.difficulty===2 && s.controlMode==='player-observable' && s.paused && s.alive &&
         s.player.health===100 && s.player.ammo===25 && resetTest.beforeReset.player.ammo<25 &&
         qev.agent.getModel()===resetTest.model && JSON.stringify(qev.priorityOrder)===resetTest.order &&
         qev.agent.history.includes(resetTest.executed) && JSON.stringify(resetTest.executed.requests)===resetTest.historyState &&
-        !qev.agent.current && qev.agent.memory===null && qev.agent.navigation.inspect().rememberedCells===0 &&
-        resetTest.resumes===resetTest.resumeCount && document.querySelector('#assistance').value==='unassisted';
+        !qev.agent.current && qev.agent.memory===null && qev.agent.observations.actions.length===0 &&
+        resetTest.resumes===resetTest.resumeCount && !document.querySelector('#assistance');
     `);
 
     await evaluate(`document.querySelector('#step').click();resetTest.pendingStep=qev.agent.current;resetTest.stepCall=resetTest.calls.length-1;
@@ -132,7 +131,7 @@ export async function checkReset({ evaluate, check, until, call, bindKillForTest
     await reset();
     await check('manual Reset can recover a dead episode without requiring a model change or automatic respawn', `
       const s=qev.engine.snapshot();return s.alive && s.paused && s.map==='qev_encounter' && s.difficulty===2 &&
-        s.assistance==='unassisted' && qev.agent.getModel()===resetTest.model && JSON.stringify(qev.priorityOrder)===resetTest.order;
+        s.controlMode==='player-observable' && qev.agent.getModel()===resetTest.model && JSON.stringify(qev.priorityOrder)===resetTest.order;
     `);
   } finally {
     await evaluate(`qev.pause();document.querySelector('#assistance-help .help-head [data-help-close]').click();
@@ -140,7 +139,6 @@ export async function checkReset({ evaluate, check, until, call, bindKillForTest
       qev.agent.getModel=resetTest.getModel;qev.engine.loadMap=resetTest.loadMap;qev.engine.resumeAudio=resetTest.resumeAudio;qev.agent.invalidate()`);
     await until(() => evaluate("!qev.agent.busy && !document.querySelector('#reset').disabled"));
     await evaluate(`document.querySelector('#speed').value='1';document.querySelector('#speed').dispatchEvent(new Event('change',{bubbles:true}));
-      document.querySelector('#assistance').value='assisted';document.querySelector('#assistance').dispatchEvent(new Event('change',{bubbles:true}));
       document.querySelector('#reset-priorities').click();qev.agent.history.length=0;qev.agent.invalidate()`);
     await fresh(0);
     await evaluate("(async()=>{for(let i=0;i<90&&!qev.engine.snapshot().player.grounded;i++)await qev.engine.frame();qev.respawner.enabled=resetTest.respawns;delete window.resetTest;document.activeElement.blur();scrollTo(0,0)})()");

@@ -88,6 +88,8 @@ void Qev_PixelsEnd(void) {
         int tag = raster.tags[(size_t)(y + raster.y) * raster.stride + x + raster.x];
         qev_pixel_object_t *o;
         if (!tag) continue;
+        if (tag >= QEV_SURFACE_FIRST && tag < QEV_SURFACE_FIRST + QEV_SURFACES)
+            view.scene[(y * 3 / raster.height) * 3 + x * 3 / raster.width][tag - QEV_SURFACE_FIRST]++;
         o = &view.objects[tag];
         if (!o->count) { o->left = o->right = x; o->top = o->bottom = y; }
         if (x < o->left) o->left = x;
@@ -97,6 +99,18 @@ void Qev_PixelsEnd(void) {
         o->count++;
         if (x == raster.width / 2 && y == raster.height / 2) o->at_aim = 1;
         if (x == 0 || y == 0 || x == raster.width - 1 || y == raster.height - 1) o->clipped = 1;
+    }
+    /* Aim at an ACTUALLY VISIBLE pixel nearest the visible bounds' center. A box's
+     * center can be a hole/occluder; never aim through that hole using hidden extent.
+     * One extra mask pass, independent of actor count. No Z or world coordinates. */
+    for (int tag = 1; tag < QEV_SURFACE_FIRST; tag++) view.objects[tag].aim_x = -1;
+    for (int y = 0; y < raster.height; y++) for (int x = 0; x < raster.width; x++) {
+        int tag = raster.tags[(size_t)(y + raster.y) * raster.stride + x + raster.x];
+        if (!tag || tag >= QEV_SURFACE_FIRST) continue;
+        qev_pixel_object_t *o = &view.objects[tag];
+        int64_t dx = 2*(int64_t)x - o->left - o->right, dy = 2*(int64_t)y - o->top - o->bottom;
+        int64_t ox = 2*(int64_t)o->aim_x - o->left - o->right, oy = 2*(int64_t)o->aim_y - o->top - o->bottom;
+        if (o->aim_x < 0 || dx*dx + dy*dy < ox*ox + oy*oy) { o->aim_x = x; o->aim_y = y; }
     }
     /* Inclusive raster indices become exclusive rectangle edges. No hidden full box. */
     for (int tag = 1; tag < QEV_PIXEL_TAGS; tag++) if (view.objects[tag].count) {

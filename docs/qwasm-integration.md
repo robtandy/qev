@@ -1,140 +1,108 @@
-# Qwasm integration notes
+# Qwasm integration and source hooks
 
-## Source inspected
+Qev pins [Qwasm](https://github.com/GMH-Code/Qwasm) commit
+`f56b5e71e4be8effede29bae1785a5306dcc0249`, Emscripten 3.1.74, and Kevala npm 0.1.3.
+The generated checkout under `build/qwasm` is patched/rebuilt by `scripts/build-engine.mjs`.
+It is not a maintained user fork. See [implementation.md](implementation.md) for the current
+API and [state-and-actions.md](state-and-actions.md) for the single-controller policy.
 
-Repository: <https://github.com/GMH-Code/Qwasm>
+## Upstream findings retained in the implementation
 
-Reference commit: `f56b5e71e4be8effede29bae1785a5306dcc0249` (`master` when inspected).
-These are the original source-research notes. Qev now fetches this revision into ignored
-`build/qwasm`, applies `engine/qwasm.patch`, and compiles it with the bridge and renderer-labelled
-visible-pixel reducer. See
-[the implementation notes](implementation.md) for the working API; proposed names and
-future steps below are preserved as design context, not a description of current status.
-
-Kevala's API reference for this proposal is the `0.1.3` source at
-[`5f1a710`](https://github.com/bvolpato/kevala/tree/5f1a7104aa6213cbe52ff03f876b5198fe451595),
-including its [integration guide](https://github.com/bvolpato/kevala/blob/5f1a7104aa6213cbe52ff03f876b5198fe451595/skills/kevala/SKILL.md)
-and [browser API](https://github.com/bvolpato/kevala/blob/5f1a7104aa6213cbe52ff03f876b5198fe451595/js/src/index.js).
-Pin dependencies deliberately when implementing; do not use an unversioned CDN `latest`
-for a reproducible demonstration.
-
-## What is present already
-
-| Existing source | What it provides / implies |
+| Source | Integration consequence |
 | --- | --- |
-| [`WinQuake/Makefile.emscripten`](https://github.com/GMH-Code/Qwasm/blob/f56b5e71e4be8effede29bae1785a5306dcc0249/WinQuake/Makefile.emscripten) | Emscripten + SDL2 build; software renderer by default, WebGL via GL4ES; currently preloads `id1` |
-| [`WinQuake/shell.html`](https://github.com/GMH-Code/Qwasm/blob/f56b5e71e4be8effede29bae1785a5306dcc0249/WinQuake/shell.html) | Browser `Module`, canvas, startup arguments, pointer lock, console, file export; not a bot observation/action API |
-| [`WinQuake/sys_sdl.c`](https://github.com/GMH-Code/Qwasm/blob/f56b5e71e4be8effede29bae1785a5306dcc0249/WinQuake/sys_sdl.c) | Registers an Emscripten main loop; `main_loop` measures wall time and calls `Host_Frame` |
-| [`WinQuake/client.h`](https://github.com/GMH-Code/Qwasm/blob/f56b5e71e4be8effede29bae1785a5306dcc0249/WinQuake/client.h) | Player HUD stats/inventory, view angles, velocity, grounded/water state, client entity references, movement command structure |
-| [`WinQuake/cl_main.c`](https://github.com/GMH-Code/Qwasm/blob/f56b5e71e4be8effede29bae1785a5306dcc0249/WinQuake/cl_main.c) | `CL_SendCmd`: gathers keyboard/mouse movement and sends it to the local or remote server |
-| [`WinQuake/cl_input.c`](https://github.com/GMH-Code/Qwasm/blob/f56b5e71e4be8effede29bae1785a5306dcc0249/WinQuake/cl_input.c) | `CL_BaseMove`, `CL_SendMove`, view-angle handling, attack/jump bits and weapon impulse serialization |
-| [`WinQuake/world.h`](https://github.com/GMH-Code/Qwasm/blob/f56b5e71e4be8effede29bae1785a5306dcc0249/WinQuake/world.h) | `SV_Move` hull/point traces and `SV_PointContents`; building blocks for local collision, support, hazard, and line-of-sight probes |
-| [`WinQuake/progdefs.q1`](https://github.com/GMH-Code/Qwasm/blob/f56b5e71e4be8effede29bae1785a5306dcc0249/WinQuake/progdefs.q1) | Rich server entity fields, including privileged data that must be filtered out of model observations |
-| [`WinQuake/host.c`](https://github.com/GMH-Code/Qwasm/blob/f56b5e71e4be8effede29bae1785a5306dcc0249/WinQuake/host.c) | Client/server frame order, frame-time filtering, and server physics pause checks |
+| `WinQuake/Makefile.emscripten` | Software renderer + SDL2; Qev removes upstream asset preloading and builds a modular ES module |
+| `sys_sdl.c` | Replace wall-time `Host_Frame` calls with the fixed 60 Hz bridge scheduler |
+| `host.c` | Avoid ordinary time filtering/minimum deltas while Qev owns input; don't call extra stopped frames/RNG |
+| `cl_main.c` | Gather only the input owned by the controller before sending a normal client command |
+| `cl_input.c` | Movement is in `usercmd_t`; angles are in `cl.viewangles`; attack/jump and weapon impulses are serialized separately |
+| `pr_edict.c` | World changes and freed entity slots invalidate old control/visible capabilities |
+| `quakedef.h` | Include bridge declarations after the required engine types |
+| `r_main.c` | Begin/end view attribution and identify the currently drawn entity; weapon/effects erase labels |
+| `d_edge.c` | Attribute actual painted edge-solved surface spans, including brush pickups and coarse surface semantics |
+| `d_polyse.c`, `d_sprite.c`, `d_part.c` | Attribute only opaque fragments that survive ordinary rendering tests; transparent texels don't occlude |
+| `d_scan.c` | Remap labels with the exact displayed water warp |
+| `snd_mix.c` | Observe nonzero spatialized PCM channel peaks, not server sound events or source positions |
+| `model.c` | Associate exact alias assets with reviewed animation labels at load time; no asset/physics mutation |
 
-The inspected build and shell do not define a ready-made JavaScript API for snapshots,
-bot inputs, or controlled simulation steps. We should add explicit exports, rather than
-hard-code offsets into a particular WASM heap or try to drive the whole agent with
-synthetic browser keyboard events.
+The upstream engine is not itself an observation/control API. Qev adds a narrow, versioned
+bridge, not hard-coded heap offsets, a model-authored console interface, or a plugin that can
+query arbitrary server entities. `world.h` exposes collision/contents primitives, but the
+**controller does not use them for route, support, cover, hazard or LOS probes**.
 
-## Original bridge proposal
+## Input and time details
 
-The implemented bridge is documented in [implementation.md](implementation.md).
-The names below were design placeholders, not exports from unmodified Qwasm:
+`CL_SendMove` does not consume an imagined `cmd.viewangles`; camera angles, attack/jump key
+state and `in_impulse` must be set in the actual client path. `+use` registration is not proof
+of a general interaction button: the reference serializes attack/jump, not a generic use bit.
+There is consequently no invented model “use any door/button” command.
 
-- `qev_get_observation`: emit a versioned, visibility-filtered snapshot at a tick boundary.
-- `qev_probe_local_move`: run bounded, non-mutating geometry probes under the observation
-  policy. A hull sweep alone is not a full Quake movement or combat simulation.
-- `qev_set_action`: accept a validated primitive/target and a bounded tick lease.
-- `qev_clear_input`: release movement, firing, jump edges, and pending weapon impulses.
-- `qev_set_paused` / `qev_step_ticks`: control the actual simulation clock, not just inputs.
+The ordinary host loop filters very small frame deltas and has RNG calls outside the filter.
+Qev must not simulate pause by repeatedly calling frames and merely suppressing input. The
+fixed scheduler freezes world calls completely, resumes without accumulated wall-clock catch-up,
+and scales pacing rather than changing physics step size. UI/key events still run while stopped.
 
-Expose the bridge through a deliberately configured Emscripten build. Validate readiness,
-local-server status, schema version, numeric bounds, target generation, and tick budget
-before touching engine state. Prefer observation copies over JS references into movable
-WASM memory. Do not expose an arbitrary model-authored console command interface.
+Standard Quake serializes the active-weapon HUD value as one byte (`sv_main.c` /
+`cl_parse.c`), unlike the full inventory bitmask. The axe's inventory bit 4096 therefore arrives
+as zero. The bridge normalizes that **HUD-only** value for display, switch suppression and
+engagement; it does not inspect the server's weapon field. Unknown values are not guessed as axes.
 
-### Observation hook
+Raw relative controls do not need exact world headings. Target assistance uses only current
+painted pixels plus camera intrinsics, with bounded angular rate. A private visible reference
+is invalidated on any lost frame; it is never a hidden tracking identity. Standard Quake physics,
+weapon behavior and damage are unchanged. The explicitly offered engagement goal adds forward
+input while the actual HUD weapon is the axe; stationary/raw attacks are not rewritten. It uses
+no target range or collision prediction, and the same visual-loss/death/lease guards release it.
+After pixel aim releases, the pure `qev_recenter.c/h` helper returns pitch toward level with a
+bounded rate/tick/wall lease. It cannot read targets, change yaw or keep movement/fire held.
+Explicit pitch commands and new targets preempt recovery; Stop freezes it without extra frames.
+Only activity, level confirmation and camera-changing tick counts are exposed, not angles/headings.
+Own-player displacement is an internal teleport
+lifecycle guard only, not an observation, navigation map or speculative safety check.
 
-Export a snapshot after a completed simulation update. Use player/HUD state and local
-geometry, and explicitly filter entity-derived facts. The local server can see everything;
-that does not mean the model should. A local-server trace API also does not imply these
-observations will work against an arbitrary remote multiplayer server.
+## Rendering and audio concessions
 
-First target stock Quake single-player data. Mods may use different model names, entity
-semantics, animations, and QuakeC behavior; require separate adapters rather than silently
-assuming the stock mappings apply.
+`qev_pixels.c/h` is a standalone reducer with no Quake/world/depth-buffer inputs. Its final
+mask counts visible coverage, not hidden bounding boxes or overdraw. Native UI overlays and
+unsupported render modes fail closed. Engine kind/animation/material labels are disclosed
+semantic assistance; they do not prove what a human could identify from the same RGB image.
+The server's door/button interaction class is not an acceptable visual feature by itself.
+`qev_animation.c/h` translate fingerprinted demo assets' current rendered frame to appearance
+labels because their original names are generic `frameN`. This is static metadata assistance,
+not reading enemy health/deadflag or AI state. Recognized corpses end enemy-aim commands, while
+unknown/downed appearances remain uncertain. See [provenance and limits](weapon-and-death-awareness.md).
 
-### Input hook
+The sound hook receives a sound identifier and mixed left/right amplitudes only. It has no
+source entity, origin or metric distance. A silent, attenuated-away, paused or blocked signal
+must not create a newly heard caption. These captions still use metadata, not speech/audio
+recognition, and cannot infer front/back, occlusion or a precise source location.
 
-A suitable place to investigate is the `CL_SendCmd` path after human input gathering and
-before `CL_SendMove`. Movement, aim, buttons, and weapon impulses must all be handled:
+## Model packing
 
-- `usercmd_t` has movement components, but that alone is not a complete bot action.
-- `CL_SendMove` reads aim from `cl.viewangles`, attack/jump from input state, and weapons
-  from `in_impulse`; simply assigning a similarly named `cmd.viewangles` is insufficient.
-- Bound aim rate and only track the selected observable target. Clamp movement consistently
-  with the game's input rules, including combined-axis movement.
-- `+use` is registered, but the inspected `CL_SendMove` serializes attack/jump bits, not a
-  generic use bit. Do not infer a working interaction action from the binding alone.
-- Keep manual play and pointer lock confined to the canvas. Inspector focus must not
-  steal control, fire a weapon, or cause the shell to recapture the pointer unexpectedly.
+Kevala's Laya sequences contain a question/options head and the state in a **single 512-token
+sequence**, with a 192-token head budget. Multiple questions create multiple sequences; a
+multi-question response aggregates `usage.input_tokens`. Qev therefore uses one question per
+request item in a single `decideMany` batch, retaining a verbatim shared state and independently
+inspectable per-question usage. This does not create speculative game steps or multiple in-flight
+jobs. Input-limit hits are rejected, not silently treated as fully read observations.
 
-## Pause, slow motion, and step need clock work
+The JS lifecycle preserves original requests/responses and samples each used choice head's
+full public distribution once. The sampled tactic/target/equipment and replayable draws are
+recorded separately from the unchanged SDK argmax. Rejections are never resampled; no tactical
+substitution or alternate target is introduced. Independent `noul` tactic ratings remain an
+explicit highest-rating diagnostic, never a fallback or an invented categorical distribution.
+See the [pinned Kevala API](https://github.com/bvolpato/kevala/blob/5f1a7104aa6213cbe52ff03f876b5198fe451595/js/src/index.js)
+and [sequence builder](https://github.com/bvolpato/kevala/blob/5f1a7104aa6213cbe52ff03f876b5198fe451595/crates/kevala/src/sequence.rs).
+Do not substitute an unversioned CDN dependency or mutate the separate Kevala/Tetris work.
 
-The engine has pause support, but robust inspection requires more than releasing keys:
+## Build/distribution boundary
 
-- `Host_FilterTime` has a 72 Hz upper-frequency filter and clamps ordinary frame deltas.
-- `host_framerate` replaces simulation frame time; it is **not** a conventional speed
-  multiplier. Merely passing smaller deltas may interact with the filter instead of giving
-  the intended slower simulation.
-- `_Host_Frame` calls `rand()` before its time filter. Calling extra background frames can
-  change randomness even when those calls do not run physics.
-- Single-player physics is also gated by whether input is directed at the game versus a
-  console/menu. Step execution needs a deliberate path independent of inspector focus.
+Game assets are separate from the GPL engine. The build embeds no resources; runtime setup uses
+only the pinned, verified LibreQuake demo and retains its notices. There is no custom-asset import
+fallback. Engine modification/source notices are in `engine/README.md` and `engine/COPYING`.
+Publishing integration source does not authorize distributing proprietary Quake data or override
+the separate terms for LibreQuake resources, Kevala or model weights.
 
-Implement a tested fixed-tick scheduler for Qev's debug mode. Freeze the world while the
-model scores; execute the requested number of ticks through the proper client/server
-input and physics sequence; pause again without wall-clock catch-up. Keep rendering/UI
-responsive and handle audio while stopped. Validate clocks and RNG before promising
-exact replay. Do not build a step API by calling `SV_Physics` in isolation.
-
-## Assets and build strategy
-
-The [upstream README](https://github.com/GMH-Code/Qwasm/blob/f56b5e71e4be8effede29bae1785a5306dcc0249/README.md)
-explains that game resource files are separate from the engine and warns against hosting
-extracted Quake PAKs without appropriate rights. It also describes software/WebGL builds
-and notes that browser WebSocket multiplayer support has not been added in this reference.
-
-Proposed setup:
-
-1. Pin Qwasm as a submodule or source dependency, preserving its license/notices.
-2. Keep Qev bridge changes in a reviewable patch or maintained fork with reproducible build
-   instructions. Pin Emscripten and, if used, GL4ES rather than relying on `latest` builds.
-3. Do not accidentally package game resources through the existing `--preload-file=id1`
-   setting. Use only the reviewed, hash-pinned LibreQuake demo bundle and stage its files
-   into the engine filesystem before game initialization. Qev does not offer custom imports.
-4. Keep original assets out of Git, published build outputs, and remote logs. A `.gitignore`
-   alone does not prevent a build script from publishing them.
-5. Load Kevala on an explicit user action and show download progress. If the model cannot
-   load, leave the game paused with retry guidance. The current app no longer exposes human
-   play. A model pack is substantial and should not download unexpectedly.
-
-No final distribution license has been selected. Qwasm's C files carry GPL-2.0-or-later
-notices and Kevala carries Apache-2.0; review compatible distribution terms and preserve
-all required source/notices before releasing a combined application. Game assets and
-model weights have their own terms.
-
-## Suggested implementation order
-
-1. **Human play:** build and host Qwasm, load the verified LibreQuake demo, verify ordinary play.
-2. **Telemetry:** display the permitted snapshot alongside the game; verify visibility,
-   local probes, coordinate conventions, and that hidden state does not leak.
-3. **Clock/input bridge:** pause, tick-step, and manually execute bounded primitives; test
-   input release, focus handling, reset, death, map load, and stale target IDs.
-4. **Decision sandbox:** render real candidate descriptions and exact Kevala requests and
-   responses, without applying them automatically. Compare question formats on fixtures.
-5. **Step agent:** score one snapshot, manually execute its chosen action, and inspect the
-   observed outcome. Establish matched rule/random baselines.
-6. **Real-time agent:** only after measuring latency and stale decisions under concurrent
-   rendering; later add exploration, memory, weapon choices, and more complex navigation.
+All browser validation must launch **and verify `--mute-audio` before loading the app**.
+Inspect actual rendered frames and PCM without producing host sound. Test-only console bindings
+are restored and never become production probes/cheat exports. Synthetic prompts and mocked
+replies must remain labelled separately from real model gameplay.

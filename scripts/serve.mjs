@@ -11,7 +11,9 @@ const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; ch
 const mounts = [["/engine/", "build/engine"], ["/vendor/kevala/", "node_modules/kevala/js/src"], ["/src/", "src"], ["/", "public"]];
 const engineFiles = new Set(["qwasm.mjs", "qwasm.wasm", "build.json", "QWASM-LICENSE.txt"]);
 
-export function makeServer(projectRoot = root) {
+export function makeServer(projectRoot = root, { evaluationEngine = false } = {}) {
+  // Only an explicit test harness may select the instrumented build. No URL/UI switch.
+  const activeMounts = mounts.map(([prefix, directory]) => [prefix, evaluationEngine && prefix === "/engine/" ? "build/engine-evaluation" : directory]);
   const demoNames = new Set(DEMO_ASSETS.map((spec) => spec.name));
   let demoReady = null;
   const getDemo = () => demoReady ||= readDemoAssets(resolve(projectRoot, DEMO_DIRECTORY)).catch((error) => {
@@ -38,7 +40,7 @@ export function makeServer(projectRoot = root) {
       }
       // The only PAK-serving exception is the complete, hash-verified LibreQuake bundle above.
       if (/\.pak$/i.test(pathname)) { res.writeHead(403).end("Forbidden"); return; }
-      const [prefix, directory] = mounts.find(([prefix]) => pathname.startsWith(prefix));
+      const [prefix, directory] = activeMounts.find(([prefix]) => pathname.startsWith(prefix));
       const name = pathname.slice(prefix.length) || "index.html";
       if (prefix === "/engine/" && !engineFiles.has(name)) { res.writeHead(404).end("Not found"); return; }
       const base = await realpath(resolve(projectRoot, directory));

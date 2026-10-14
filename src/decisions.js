@@ -1,6 +1,9 @@
-import { PRIMARY_OBJECTIVE, DEFAULT_PRIORITY_ORDER, validatePriorityOrder, objectivesFor, goalPrompt, OFFER_POLICY } from "./objective.js";
-import { ASSISTANCE, assistanceOf } from "./assistance.js";
-import { prepareUnassisted, unassistedState } from "./unassisted.js";
+import { PRIMARY_OBJECTIVE, DEFAULT_PRIORITY_ORDER, validatePriorityOrder, objectivesFor, goalPrompt } from "./objective.js";
+import { CONTROL_MODE, OBSERVATION_POLICY, CONTROLLER_POLICY, OFFER_POLICY } from "./control.js";
+import { screenCues, fallenEnemy } from "./screen.js";
+import { perception, readable, viewText, targetText, sceneText, poseText } from "./perception.js";
+import { weaponReach, weaponOption, weaponInventory, WEAPON_GUIDANCE } from "./weapons.js";
+import { SAMPLING_METHOD, sampleDistribution } from "./sampling.js";
 
 export const ACTION_TICKS = 12;
 export const LIVE_TICKS = 45;
@@ -12,287 +15,122 @@ export function validateDecisionFormat(format) {
   if (format !== "choice" && format !== "noul") throw new Error(`Unsupported decision format: ${format}`);
   return format;
 }
-// Retained only as the explicit comparison baseline, never silently substituted for choice.
+// Kevala includes option KEYS in the encoded text. Keep internal tactic names
+// out of those keys so recent-action IDs do not become duplicated answer hints.
+const optionId = candidate => candidate.optionId ?? candidate.id;
+// Explicit diagnostic comparison, never an automatic fallback.
 export const NOUL_BASELINE_QUESTION = {
-  favorable: {
-    type: "noul",
-    instructions: `Does this action help the player ${PRIMARY_OBJECTIVE} according to the listed priorities, highest first?`,
-    criteria: {
-      true: "advances a higher-priority goal without needlessly sacrificing it for a lower-priority goal",
-      false: "ignores higher-priority needs or pursues a lower-priority goal at their expense",
-    },
-  },
+  favorable: { type: "noul", instructions: `Does this action help the player ${PRIMARY_OBJECTIVE} according to the listed priorities, highest first?`,
+    criteria: { true: "advances a higher-priority goal without needlessly sacrificing it for a lower-priority goal",
+      false: "ignores higher-priority needs or pursues a lower-priority goal at their expense" } },
 };
 
-export const distance = (a, b) => Math.hypot(...a.map((v, i) => v - b[i]));
-const wrap = (angle) => ((angle % 360) + 360) % 360;
-const bearing = (n) => Math.abs(n) < 15 ? "ahead" : n < 0 ? "to the left" : "to the right";
-const range = (n) => n < 128 ? "nearby" : n < 512 ? "at medium range" : "far away";
-const readable = (kind) => kind === "monster_army" ? "armed grunt" : kind.replace(/^monster_|^weapon_/, "").replaceAll("_", " ");
-const toward = (from, to) => {
-  const dx = to[0] - from[0], dy = to[1] - from[1], length = Math.hypot(dx, dy);
-  return length > 1 ? [dx / length, dy / length] : [0, 0];
-};
-const heading = (move) => Math.atan2(move[1], move[0]) * 180 / Math.PI;
-const moving = (candidate) => Math.hypot(candidate.params.dx, candidate.params.dy) > 0.001;
-const safe = (geometry) => !geometry.error && !geometry.blocked && geometry.supported && !geometry.hazard;
-const COURSE_CONTEXT = "Walk headings use the held course, not the turning camera; contacts/scans/combat use current view.";
-const underPressure = (observation, memory) => observation.enemies.some(e => e.visible === true) ||
-  (memory?.epoch === observation.epoch && memory.damage > 0);
-const ammoKind = (weapon) => /shotgun/.test(weapon) ? "shells" : /nailgun/.test(weapon) ? "spikes" :
-  /launcher/.test(weapon) ? "rockets" : weapon === "lightning" ? "cells" : null;
-function supplyPriority(candidate, player) {
-  const kind = candidate.pickupKind;
-  if ((kind === "health" || kind === "mega_health") && player.health < 100) return player.health <= 30 ? 0 : 1;
-  if (kind === ammoKind(player.weapon) && player.ammo <= 5) return player.ammo <= 0 ? 1 : 2;
-  if (kind === "armor" && player.armor < 100) return 2;
-  if (kind === "mega_health" || kind === "armor" || kind === ammoKind(player.weapon)) return 3;
-  return kind === "silver_key" || kind === "gold_key" ? 5 : 4;
-}
-
-/** A delayed 'forward' must not steer back toward an old, intermediate camera angle. */
-function steeringFrame(observation, { realtime = false, heldCandidate = null } = {}) {
-  const p = heldCandidate?.params;
-  const heldCourse = realtime && heldCandidate?.category === "exploration" && p?.slot < 0 && p.fire === false &&
-    Number.isFinite(p.dx) && Number.isFinite(p.dy) && Math.hypot(p.dx, p.dy) > 0.001;
-  return { source: heldCourse ? "held-course" : "view", heading: heldCourse ? wrap(heading([p.dx, p.dy])) : wrap(observation.player.yaw),
-    viewHeading: observation.player.yaw, sourceDecisionId: heldCourse ? heldCandidate.decisionId ?? null : null };
-}
-
-export function situation(observation, memory = null, exploration = null, priorityOrder = DEFAULT_PRIORITY_ORDER) {
-  if (assistanceOf(observation) === "unassisted") return unassistedState(observation, memory, { priorityOrder });
-  if (observation.completed) return "Level complete: the engine confirmed the exit. No further action is required.";
-  const { player: p } = observation;
-  const enemies = observation.enemies.filter((e) => e.visible === true);
-  const pickups = observation.pickups.filter((e) => e.visible === true);
-  const text = [
-    goalPrompt(priorityOrder),
-    `Player: ${p.health <= 30 ? "low" : "moderate or high"} health (${p.health}), armor ${p.armor}, ${p.weapon}, ${p.ammo} ammo. Keys: ${[p.silverKey && "silver", p.goldKey && "gold"].filter(Boolean).join(" and ") || "none"}. ${p.grounded ? "Grounded." : "Airborne; gravity and momentum apply."}${p.inWater ? " In water." : ""}`,
-    enemies.length ? `Enemies observed: ${enemies.map((e) => `${readable(e.kind)} ${bearing(e.bearingRight)} ${range(e.distance)}`).join("; ")}.` : "No enemies are currently observed; unseen areas are unknown.",
-    pickups.length ? `Visible pickups: ${pickups.map((e) => `${readable(e.kind)} ${bearing(e.bearingRight)} ${range(e.distance)}`).join("; ")}.` : "No pickups observed.",
+export function situation(observation, memory = null, { priorityOrder = DEFAULT_PRIORITY_ORDER, visual = screenCues(observation), realtime = false, heldAction = null } = {}) {
+  if (observation.completed) return "Level complete; the game confirmed intermission.";
+  if (!observation.ready || !observation.player) return "No active player observation.";
+  const p = observation.player, seen = perception(observation, visual);
+  const text = [goalPrompt(priorityOrder),
+    `HUD: health ${p.health}, armor ${p.armor}, held ${p.weapon} (${weaponReach(p.weapon)}), ${p.weapon === "axe" ? "no ammo needed" : `ammo ${p.ammo}`}; shells/nails/rockets/cells ${p.shells ?? 0}/${p.nails ?? 0}/${p.rockets ?? 0}/${p.cells ?? 0}; keys ${[p.silverKey && "silver", p.goldKey && "gold"].filter(Boolean).join("+") || "none"}; ${p.grounded ? "grounded" : "airborne"}${p.inWater ? "; water" : ""}.`,
+    ...(["quad", "invulnerable", "invisible", "suit"].some(key => p.powerups?.[key] === true) ? [`Powerups: ${["quad", "invulnerable", "invisible", "suit"].filter(key => p.powerups?.[key] === true).join(",")}.`] : []),
+    `${weaponInventory(seen.weapons)} ${WEAPON_GUIDANCE}`,
+    seen.available ? `Visible: ${viewText(seen) || "no labelled objects"}.` : "View unavailable; unseen areas unknown.",
+    ...(seen.omitted ? [`${seen.omitted} additional visible objects omitted by sensor cap.`] : []),
+    ...(sceneText(seen) ? [sceneText(seen)] : []),
+    ...(seen.sounds.length ? [`Heard: ${seen.sounds.slice(0, 3).map(e => `${e.kind.replaceAll("_", " ")} ${e.direction} ${e.loudness}${e.ageTicks >= 30 ? ` ${Math.ceil(e.ageTicks / 60)}s ago` : ""}`).join("; ")}.`] : []),
   ];
-  if (exploration) {
-    text.push(`Exploration memory: ${exploration.rememberedCells} visited grid cells, ${exploration.currentCellEntries} entries into this cell; ${exploration.noProgressActions} actions without new area/contact, ${exploration.stationaryScans} consecutive stationary scans.`);
-    if (exploration.recovery) text.push(underPressure(observation, memory) ? "Repeated area/contact observations are not a failure while defending or recovering." : "Loop detected: weigh a different route against the listed priorities.");
-  }
-  if (memory?.epoch === observation.epoch) {
-    text.push(`Last action: ${memory.label}; ${memory.displacement < 5 ? "almost no displacement" : "changed position"}; lost ${memory.damage} health ${memory.realtime ? "in the observed interval after applying it" : "during that action"}.`);
-    if (!exploration && memory.scansWithoutNewContacts > 0) text.push(`Scanned ${memory.scansWithoutNewContacts} consecutive times without observing a new enemy or pickup.`);
-  }
-  return text.join(" ");
-}
-
-/** Only observed telemetry and measured local history reach prose; never a hidden exit/map graph. */
-export function candidates(observation, probe, memory = null, { realtime = false, heldAction = null, heldCandidate = null, navigation = null, priorityOrder = DEFAULT_PRIORITY_ORDER } = {}) {
-  if (assistanceOf(observation) === "unassisted") return prepareUnassisted(observation, memory, { realtime, heldAction, priorityOrder }).candidates;
-  if (!observation.ready || !observation.alive || observation.completed) return [];
-  const { player: p } = observation;
-  const maxTicks = realtime ? LIVE_TICKS : ACTION_TICKS;
-  const theta = p.yaw * Math.PI / 180;
-  const forward = [Math.cos(theta), Math.sin(theta)], left = [-Math.sin(theta), Math.cos(theta)];
-  const summary = navigation?.summary(observation);
-  const steering = steeringFrame(observation, { realtime, heldCandidate });
-  const context = situation(observation, memory, summary, priorityOrder) + (steering.source === "held-course" ? ` ${COURSE_CONTEXT}` : "");
-  const options = [];
-  function add(id, label, move, target = null, fire = false, yaw = p.yaw, category = "combat", ticks = maxTicks) {
-    const params = {
-      epoch: observation.epoch, tick: observation.tick, dx: move[0], dy: move[1],
-      slot: target?.slot ?? -1, generation: target?.generation ?? 0,
-      yaw: wrap(yaw), pitch: target ? p.pitch : 0, fire, ticks,
-    };
-    const isMoving = Math.hypot(...move) > 0.001;
-    let geometry = probe(params);
-    const initialTicks = ticks;
-    // A long horizon hitting a distant wall must not remove a useful short approach/turn.
-    if (isMoving && !geometry.error && !safe(geometry)) {
-      for (const shorter of [24, 12, 6].filter((n) => n < initialTicks)) {
-        params.ticks = shorter; geometry = probe(params);
-        if (safe(geometry) || geometry.error) break;
-      }
-    }
-    let reason = geometry.error || (isMoving ? (geometry.locked ? `Door requires ${geometry.requiredKey || "a missing key"}.` : geometry.blocked ? "Local swept hull is blocked." : !geometry.supported ? "Floor support is not established." : geometry.hazard ? "The tested route reaches a known hazard." : null) : null);
-    let filterKind = reason ? "geometry" : null;
-    if (fire && (p.ammo <= 0 || p.weapon === "axe")) { reason = "No supported ranged weapon with ammunition."; filterKind = "ammo"; }
-    if (category === "pickup" && ((target.kind === "health" && p.health >= 100) || (target.kind === "mega_health" && p.health >= 250) || (target.kind === "silver_key" && p.silverKey) || (target.kind === "gold_key" && p.goldKey))) {
-      reason = "This resource is already full or owned; approaching it adds no needed resource."; filterKind = "objective";
-    }
-    const route = isMoving && geometry.end && navigation ? navigation.route(p.position, geometry.end, ...move) : null;
-    if (!reason && route?.coolingDown) { reason = "Loop guard: this route repeatedly produced no movement; try another direction temporarily."; filterKind = "loop"; }
-    const facts = [];
-    if (!isMoving) facts.push("No movement requested; gravity and momentum still apply.");
-    else if (!reason) {
-      facts.push(geometry.contact ? `Local probe reaches a touch-operated ${geometry.contact}; contact may open it, not guaranteed.` : "Tested walking route is clear, supported, and avoids detected lava/slime.");
-      if (params.ticks < initialTicks) facts.push("Shorter step near an obstacle/edge; farther travel is not validated.");
-    }
-    if (route) facts.push(!route.destinationVisited ? "Endpoint is in a not-yet-visited grid cell; a possible exploration route, not a known exit." : route.sameCell ? "Endpoint stays in the current visited cell." : `Endpoint returns to a cell entered ${route.visits} times; revisiting may help retreat, cover or supplies.`);
-    if (id === "continue-route") facts.push("Keeps the model-selected exploration direction while walkable; may pass the previous local waypoint. No scripted map route.");
-    const headingInspected = category === "scan" && !!navigation?.inspected(p.position, yaw);
-    if (category === "scan") facts.push(headingInspected ? "This heading was already inspected from this area; another turn reveals no guaranteed new information." : "This turn may reveal a threat, supply or route without committing to movement; it does not establish safety.");
-    const threat = observation.enemies.find((e) => e.visible === true);
-    if (threat) {
-      const exposure = target === threat ? geometry : probe({ ...params, slot: threat.slot, generation: threat.generation });
-      const separationDelta = geometry.end && threat.position ? distance(geometry.end, threat.position) - distance(p.position, threat.position) : null;
-      geometry.threatExposure = { slot: threat.slot, generation: threat.generation, lineOfSightAtEndpoint: exposure.lineOfSightAtEndpoint, separationDelta };
-      if (separationDelta > 5) facts.push("Endpoint is farther from the observed enemy's current position; escape is not guaranteed.");
-      if (separationDelta < -5) facts.push("Endpoint is closer to the observed enemy's current position.");
-      if (exposure.lineOfSightAtEndpoint !== null) facts.push(exposure.lineOfSightAtEndpoint ? "Endpoint remains exposed to the observed enemy." : "Endpoint blocks the observed enemy's current line of sight.");
-      facts.push(fire ? "Tracks and fires when aim/line of fire permit; hits are not guaranteed." : "Does not fire at the observed enemy.");
-    }
-    const health = observation.pickups.find((item) => item.visible === true && item.kind === "health");
-    if (health && geometry.end && p.health < 100) {
-      const change = distance(geometry.end, health.position) - distance(p.position, health.position);
-      facts.push(change < -5 ? "Closer to visible health; collection is not guaranteed." : change > 5 ? "Farther from visible health." : "Little progress toward visible health.");
-    }
-    const live = realtime ? ` Real-time: the world continues during scoring.${heldAction ? ` Currently holding: ${heldAction}.` : ""} Revalidate on arrival; replace sooner if needed.` : "";
-    const state = `${context}${live} Candidate: ${label} for ${realtime ? "up to " : ""}${Math.round(params.ticks * 1000 / TICK_HZ)} ms. ${facts.join(" ")} Geometry is an estimate, not a rollout; future enemy movement, hits, and damage are unknown.`;
-    // Short option descriptions avoid exhausting Laya's separate 192-token question head.
-    let choiceText = label;
-    if (category === "exploration") choiceText = id === "continue-route" ? "Continue the selected walking direction." : `Walk ${id.replaceAll("-", " ")}; face that direction.`;
-    if (category === "scan") choiceText = `Look ${id === "scan-left" ? "left" : "right"} without walking.`;
-    if (category === "wait") choiceText = "Wait and recheck blocked walking routes.";
-    if (category === "pickup") choiceText = `Approach ${readable(target.kind)} ${bearing(target.bearingRight)}; no fire.`;
-    if (fire) choiceText = `Fire at ${readable(target.kind)} ${bearing(target.bearingRight)}; ${isMoving ? `move ${id.replace("-fire", "")}` : "stand still"}.`;
-    const candidate = { id, category, label, choiceText, headingInspected, params, geometry, route, pickupKind: category === "pickup" ? target.kind : null, allowed: !reason, reason, filterKind, state };
-    options.push(candidate); return candidate;
-  }
-  const enemies = observation.enemies.filter((e) => e.visible === true).slice(0, 3);
-  for (const e of enemies) add(`fire-${e.slot}`, `Track and fire at ${readable(e.kind)} ${bearing(e.bearingRight)}, without moving`, [0, 0], e, true);
-  if (enemies.length) {
-    const target = enemies[0];
-    add("left-fire", "Strafe left while tracking and firing at the nearest visible enemy", left, target, true);
-    add("right-fire", "Strafe right while tracking and firing at the nearest visible enemy", left.map((n) => -n), target, true);
-    add("back-fire", "Backpedal while tracking and firing at the nearest visible enemy", forward.map((n) => -n), target, true);
-  }
-  for (const item of observation.pickups.filter((e) => e.visible === true).slice(0, 3)) add(`pickup-${item.slot}`, `Approach the visible ${readable(item.kind)} without firing`, toward(p.position, item.position), item, false, p.yaw, "pickup");
-  if (navigation?.goal) {
-    const move = toward(p.position, navigation.goal.position);
-    const remaining = Math.hypot(navigation.goal.position[0] - p.position[0], navigation.goal.position[1] - p.position[1]);
-    if (remaining > 24) add("continue-route", "Continue along the chosen exploration direction", move, null, false, heading(move), "exploration");
-  }
-  // Walking choices remain available during combat: killing every monster is not the goal.
-  for (const [id, label, degrees] of [["forward", "forward", 0], ["forward-left", "forward-left", 45], ["forward-right", "forward-right", -45], ["left", "left", 90], ["right", "right", -90], ["back", "back to inspect another route", 180], ["back-left", "back-left", 135], ["back-right", "back-right", -135]]) {
-    const yaw = steering.heading + degrees, radians = yaw * Math.PI / 180;
-    const move = [Math.cos(radians), Math.sin(radians)].map((n) => Math.abs(n) < 1e-10 ? 0 : n);
-    const description = steering.source === "held-course" ? `Walk ${id} relative to the held course` : `Walk ${label} and look along that route`;
-    add(id, description, move, null, false, yaw, "exploration");
-  }
-  add("scan-left", "Turn left to inspect another heading without walking", [0, 0], null, false, p.yaw + (realtime ? 90 : 36), "scan");
-  add("scan-right", "Turn right to inspect another heading without walking", [0, 0], null, false, p.yaw - (realtime ? 90 : 36), "scan");
-  const hasWalkingRoute = options.some((c) => c.allowed && moving(c));
-  if (!hasWalkingRoute && p.grounded && summary?.inspectedHeadings === 8 && summary.noProgressActions >= 6 && observation.tick - summary.lastScanTick < 120) {
-    for (const c of options.filter((c) => c.category === "scan")) {
-      c.allowed = false; c.filterKind = "loop";
-      c.reason = "Blocked-route guard: all headings inspected; wait/recheck instead of continuously spinning.";
-    }
-    add("wait-route", "Wait briefly and recheck the blocked route; no safe walk is known", [0, 0], null, false, p.yaw, "wait");
-  }
-  if (summary?.recovery && hasWalkingRoute && !underPressure(observation, memory)) {
-    for (const c of options.filter((c) => c.category === "scan")) {
-      c.allowed = false; c.filterKind = "loop";
-      c.reason = "Loop guard: repeated stationary scans with no observed threat or recent damage; recheck a walkable route.";
-    }
-  }
-  // Never leave no choices solely because of historical cooldowns; current geometry still wins.
-  if (!options.some((c) => c.allowed)) for (const c of options.filter((c) => c.category === "scan")) { c.allowed = true; c.reason = null; c.filterKind = null; }
-  return options;
-}
-
-export function prepareDecision(observation, probe, memory, options = {}) {
-  const decisionFormat = validateDecisionFormat(options.decisionFormat ?? DEFAULT_DECISION_FORMAT);
-  const priorityOrder = validatePriorityOrder(options.priorityOrder === undefined ? DEFAULT_PRIORITY_ORDER : options.priorityOrder);
-  const decisionOptions = { ...options, priorityOrder };
-  if (assistanceOf(observation) === "unassisted") {
-    const prepared = prepareUnassisted(observation, memory, decisionOptions);
-    return { ...prepared, decisionFormat, requests: requestsFor(prepared.eligible, prepared.sharedState, decisionFormat) };
-  }
-  const all = candidates(observation, probe, memory, decisionOptions);
-  const valid = all.filter((c) => c.allowed);
-  const combat = valid.filter((c) => c.category === "combat");
-  // Keep one stationary firing choice and a defensive moving-fire option, rather than
-  // letting several stationary targets hide retreat. This only constructs the offers.
-  const defensiveFire = combat.find(c => c.id === "back-fire") || combat.find(moving);
-  const combatOffers = [...new Set([...combat.slice(0, 1), ...(defensiveFire ? [defensiveFire] : []), ...combat])];
-  const resources = valid.filter((c) => c.category === "pickup").sort((a, b) => supplyPriority(a, observation.player) - supplyPriority(b, observation.player));
-  const visibleThreat = observation.enemies.some(e => e.visible === true);
-  const routes = valid.filter((c) => c.category === "exploration").sort((a, b) => {
-    if (visibleThreat) {
-      const exposure = c => c.geometry.threatExposure;
-      const cover = Number(exposure(b)?.lineOfSightAtEndpoint === false) - Number(exposure(a)?.lineOfSightAtEndpoint === false);
-      const separation = Math.round(exposure(b)?.separationDelta ?? 0) - Math.round(exposure(a)?.separationDelta ?? 0);
-      if (cover || separation) return cover || separation;
-    }
-    return Number(b.id === "continue-route") - Number(a.id === "continue-route") ||
-      (a.route?.failures || 0) - (b.route?.failures || 0) || (a.route?.visits || 0) - (b.route?.visits || 0);
-  });
-  const scans = valid.filter((c) => c.category === "scan" || c.category === "wait");
-  // Disclosed candidate budgeting, not score adjustment or a rule-selected replacement action.
-  const budget = options.realtime ? 6 : 8;
-  const urgentSupplies = resources.filter(c => supplyPriority(c, observation.player) <= 2).length;
-  const resourceSlots = visibleThreat ? Math.max(1, Math.min(2, urgentSupplies)) : 2;
-  const chosen = [...combatOffers.slice(0, options.realtime ? 2 : 3), ...resources.slice(0, resourceSlots)];
-  const scanBudget = Math.min(scans.length, Math.max(0, budget - chosen.length - Math.min(routes.length, 2)));
-  chosen.push(...routes.slice(0, Math.max(0, budget - chosen.length - scanBudget)), ...scans.slice(0, scanBudget));
-  for (const c of [...routes, ...resources, ...combat]) if (chosen.length < budget && !chosen.includes(c)) chosen.push(c);
-  const eligible = chosen.slice(0, budget);
-  for (const c of valid) if (!eligible.includes(c)) c.offerNote = "Not offered: survival-first action budget; defensive options and needed supplies take priority over keys and novelty.";
-  const navigation = options.navigation?.summary(observation) || null;
-  const steering = eligible.length ? steeringFrame(observation, options) : null;
-  const sharedState = eligible.length ? choiceState(observation, eligible, memory, navigation, decisionOptions) : "";
-  return { assistance: "assisted", observationPolicy: ASSISTANCE.assisted.observationPolicy, controller: ASSISTANCE.assisted.controller,
-    objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), offerPolicy: OFFER_POLICY,
-    candidates: all, eligible, navigation, steering, decisionFormat, sharedState, requests: requestsFor(eligible, sharedState, decisionFormat) };
-}
-
-/** One compact, whitelisted observation plus per-action measured facts, not six repeated states. */
-function choiceState(observation, eligible, memory, navigation, { realtime = false, heldAction = null, heldCandidate = null, priorityOrder }) {
-  const p = observation.player;
-  const enemies = observation.enemies.filter((e) => e.visible === true).slice(0, 3);
-  const pickups = observation.pickups.filter((e) => e.visible === true).slice(0, 3);
-  const describe = (e) => `${readable(e.kind)} ${bearing(e.bearingRight).replace("to the ", "")} ${range(e.distance).replace("at ", "")}`;
-  const text = [
-    goalPrompt(priorityOrder),
-    `Player: health ${p.health}, armor ${p.armor}, ${p.weapon}, ammo ${p.ammo}; keys ${[p.silverKey && "silver", p.goldKey && "gold"].filter(Boolean).join("+") || "none"}; ${p.grounded ? "grounded" : "airborne; gravity applies"}${p.inWater ? "; in water" : ""}.`,
-    `Enemies: ${enemies.map(describe).join("; ") || "none observed"}; unseen areas are unknown.`,
-    ...(pickups.length ? [`Pickups: ${pickups.map(describe).join("; ")}.`] : []),
-  ];
-  if (enemies.length) text.push("Enemy estimates use the nearest observed threat.");
-  if (navigation) text.push(`Exploration: ${navigation.rememberedCells} cells, ${navigation.currentCellEntries} visits, ${navigation.noProgressActions} no-discovery actions, ${navigation.stationaryScans} stationary scans.${navigation.recovery && !underPressure(observation, memory) ? " Loop detected." : ""}`);
-  if (steeringFrame(observation, { realtime, heldCandidate }).source === "held-course") text.push(COURSE_CONTEXT);
-  text.push(`Actions up to ${realtime ? 750 : 200} ms; shorter limits below. Geometry is estimated; hits, cover and pickups are not guaranteed.`);
-  for (const c of eligible) {
-    const facts = c.params.ticks < (realtime ? LIVE_TICKS : ACTION_TICKS) ? [`${Math.round(c.params.ticks * 1000 / TICK_HZ)}ms`] : [];
-    if (moving(c)) {
-      facts.push(c.geometry.contact ? `touch ${c.geometry.contact}` : "clear floor");
-      if (c.route) facts.push(!c.route.destinationVisited ? "new cell" : c.route.sameCell ? "same cell" : `visits ${c.route.visits}`);
-      if (c.route?.failures) facts.push(`failed ${c.route.failures}`);
-    } else facts.push("stationary input");
-    if (c.category === "scan") facts.push(c.headingInspected ? "heading inspected" : "heading not inspected");
-    const exposed = c.geometry.threatExposure?.lineOfSightAtEndpoint;
-    if (exposed === true) facts.push("LOS clear");
-    if (exposed === false) facts.push("LOS blocked");
-    if (c.geometry.threatExposure?.separationDelta > 5) facts.push("enemy farther");
-    if (c.geometry.threatExposure?.separationDelta < -5) facts.push("enemy closer");
-    text.push(`${c.id}: ${facts.join(", ")}.`);
-  }
-  // Put core objective/state and every action's facts before optional recency/pacing context.
-  if (memory?.epoch === observation.epoch) text.push(`Last observed: ${memory.label}; moved ${Math.round(memory.displacement)} units, lost ${memory.damage} health.`);
-  if (realtime) text.push(`Live: world continues during scoring. Currently holding: ${heldAction || "neutral input"}. Revalidate before applying.`);
+  if (Number.isSafeInteger(p.kills)) text.push(`Scoreboard kills: ${p.kills}.`);
+  if (p.noMovementTicks >= 6) text.push(`Movement ineffective for ${(p.noMovementTicks / TICK_HZ).toFixed(1)}s; body stationary.`);
+  if (memory?.pastSightings?.length) text.push(`Previously seen, NOT tracked: ${memory.pastSightings.slice(0, 2).map(e => `${readable(e.kind)}${poseText(e) ? ` ${poseText(e)}` : ""} old-view ${e.side} ${Math.ceil(e.ageTicks / 60)}s ago`).join("; ")}.`);
+  const last = memory?.actions?.at(-1);
+  if (last) text.push(`Since ${last.actionId || last.action}: health ${last.healthChange >= 0 ? "+" : ""}${last.healthChange}${last.weaponChanged ? "; weapon changed" : `, ammo ${last.ammoChange >= 0 ? "+" : ""}${last.ammoChange}`}${last.weaponEquipped === false ? `; requested ${last.weaponRequested} not equipped` : ""}${last.killsChange > 0 ? `; scoreboard kills +${last.killsChange}` : ""}.${memory.repeated >= 2 ? ` View repeats ${memory.repeated}x (not location).` : ""}`);
+  text.push(`${realtime ? `Live, holding ${heldAction || "nothing"}` : "Stopped"}; max ${realtime ? 750 : 200}ms. Unseen unknown; size not depth; crosshair not melee contact.`);
   return text.join("\n");
 }
 
-/** Exported for paired evaluation on identical saved observations/actions, without executing them. */
-export function requestsFor(eligible, sharedState, decisionFormat = DEFAULT_DECISION_FORMAT) {
+/** No probes, tactical ranking, ammo/survival filters or remembered-route vetoes. */
+export function prepareDecision(observation, memory = null, options = {}) {
+  const decisionFormat = validateDecisionFormat(options.decisionFormat ?? DEFAULT_DECISION_FORMAT);
+  const priorityOrder = validatePriorityOrder(options.priorityOrder === undefined ? DEFAULT_PRIORITY_ORDER : options.priorityOrder);
+  const visual = options.visual ?? screenCues(observation), seen = perception(observation, visual);
+  const bindings = {
+    aim: seen.contacts.filter(e => e.ref !== null && e.group === "enemy" && !fallenEnemy(e)),
+    item: seen.contacts.filter(e => e.ref !== null && e.group === "pickup"),
+    weapon: seen.weapons.length > 1 ? seen.weapons.map(w => ({ ...w, id: `w${w.id}`, weapon: w.id })) : [],
+  };
+  const context = observation.ready && observation.alive && !observation.completed
+    ? situation(observation, memory, { ...options, priorityOrder, visual }) : "";
+  const all = [];
+  function add(id, label, fields = {}, binding = null) {
+    const params = { epoch: observation.epoch, tick: observation.tick, ref: binding ? null : 0,
+      forward: 0, side: 0, up: 0, yawRate: 0, pitchRate: 0, fire: false, jump: false,
+      weapon: bindings.weapon.length ? null : 0, ticks: options.realtime ? LIVE_TICKS : ACTION_TICKS, ...fields };
+    all.push({ id, optionId: `a${all.length}`, label, choiceText: label, binding, params, allowed: true, reason: null,
+      state: `${context}\nCandidate: ${label}.` });
+  }
+  if (observation.ready && observation.alive && !observation.completed) {
+    add("forward", "Run forward", { forward: 1 }); add("back", "Back up", { forward: -1 });
+    add("left", "Strafe left", { side: -1 }); add("right", "Strafe right", { side: 1 });
+    add("turn-left", "Look left", { yawRate: 90 }); add("turn-right", "Look right", { yawRate: -90 });
+    add("look-up", "Look up", { pitchRate: -60 }); add("look-down", "Look down", { pitchRate: 60 });
+    // The native attack button can swing an axe OR fire a gun. Do not describe
+    // every attack as ranged firing; equipment is chosen concurrently.
+    add("fire", "Attack straight ahead", { fire: true }); // Available even with no contact/ammo.
+    const aim = bindings.aim.length ? "aim" : null;
+    if (aim) {
+      // Explicit model-chosen goal, NOT an override of stationary attacks. The
+      // executor advances only while the CURRENT HUD weapon is the melee axe.
+      add("engage", "Engage: aim and attack, close in with axe", { fire: true, meleeApproach: true }, aim);
+      add("attack", "Hold position and attack", { fire: true }, aim);
+    }
+    add("forward-fire", aim ? "Aim and attack while advancing" : "Advance attacking", { forward: 1, fire: true }, aim);
+    add("back-fire", aim ? "Aim and attack while retreating" : "Back up attacking", { forward: -1, fire: true }, aim);
+    add("left-fire", aim ? "Aim and attack moving left" : "Strafe left attacking", { side: -1, fire: true }, aim);
+    add("right-fire", aim ? "Aim and attack moving right" : "Strafe right attacking", { side: 1, fire: true }, aim);
+    if (bindings.item.length) add("approach", "Approach item", { forward: 1 }, "item");
+    add("jump", "Jump forward", { forward: 1, jump: true });
+    add("swim-up", "Swim up", { up: 1 }); add("swim-down", "Swim down", { up: -1 });
+    // Equipment accompanies the tactic; selecting an already-held gun must not
+    // become a turn-consuming no-op. Wait + a weapon still permits a stationary switch.
+    add("wait", "Wait");
+  }
+  const grounding = Object.fromEntries(Object.entries(bindings).filter(([, entries]) => entries.length).map(([key, entries]) => [key, {
+    type: "choice", instructions: key === "aim" ? "Which visible enemy is the urgent threat? Consider attacks, apparent size and damage. Crosshair alignment alone is not priority. Size is not distance."
+      : key === "item" ? "Which visible pickup best meets HUD needs? Follow priorities. Size is not distance."
+      : "Best owned weapon? Use strongest effective loaded gun; consider reach and self-harm.",
+    criteria: Object.fromEntries(entries.map(e => [e.id, key === "weapon" ? weaponOption(e, observation.player) : targetText(e)])),
+  }]));
+  return { controlMode: CONTROL_MODE, observationPolicy: OBSERVATION_POLICY, controller: CONTROLLER_POLICY,
+    objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), offerPolicy: OFFER_POLICY,
+    candidates: all, eligible: all, bindings, grounding, memory: structuredClone(memory), visual,
+    decisionFormat, sharedState: context, requests: requestsFor(all, context, decisionFormat, grounding) };
+}
+export function candidates(observation, memory = null, options = {}) { return prepareDecision(observation, memory, options).candidates; }
+
+/** Multiple explicit choice heads share ONE state. This avoids Cartesian-product
+ * shortlisting while leaving every target/weapon selection to the model. */
+export function requestsFor(eligible, sharedState, decisionFormat = DEFAULT_DECISION_FORMAT, grounding = {}) {
   validateDecisionFormat(decisionFormat);
   if (!eligible.length) return [];
-  if (decisionFormat === "noul") return eligible.map((c) => ({ state: c.state, questions: structuredClone(NOUL_BASELINE_QUESTION) }));
-  return [{ state: sharedState, questions: { action: {
-    type: "choice",
-    instructions: `Which action best helps you ${PRIMARY_OBJECTIVE}? Follow the listed priorities, highest first.`,
-    criteria: Object.fromEntries(eligible.map((c) => [c.id, c.choiceText])),
-  } } }];
+  for (const c of eligible) if (c.binding && !grounding[c.binding]) throw new Error(`Missing choice question: ${c.binding}`);
+  // Kevala tokenizes each question independently anyway. One question per item
+  // in ONE decideMany call preserves per-question usage rather than a misleading
+  // aggregate (four clipped 512-token questions otherwise report 2048 tokens).
+  const actions = decisionFormat === "noul" ? eligible.map(c => ({ state: c.state, questions: structuredClone(NOUL_BASELINE_QUESTION) })) :
+    [{ state: sharedState, questions: { action: { type: "choice",
+      instructions: `Which tactic helps ${PRIMARY_OBJECTIVE}? Follow listed priorities, highest first. Use recent outcomes; equipment is concurrent.`,
+      criteria: Object.fromEntries(eligible.map(c => [optionId(c), c.choiceText])),
+    } } }];
+  return actions.concat(Object.entries(grounding).map(([name, question]) => ({ state: sharedState, questions: { [name]: structuredClone(question) } })));
 }
 
-/** Preserve the SDK's actual choice, including ties introduced by rounded public probabilities. */
+export function rankDecision(record) {
+  if (!Array.isArray(record.responses) || record.responses.length !== record.requests.length) throw new Error("Model returned an unexpected response count.");
+  const count = record.decisionFormat === "choice" ? 1 : record.eligible.length;
+  return rankResponses(record.responses.slice(0, count), record.eligible, record.decisionFormat);
+}
+
+/** Validate and rank the UNMODIFIED response for inspection. SDK argmax breaks
+ * rounded ties in this ranking; choice execution samples separately, not ranking[0]. */
 export function rankResponses(responses, eligible, decisionFormat = DEFAULT_DECISION_FORMAT) {
   validateDecisionFormat(decisionFormat);
   if (!Array.isArray(responses) || responses.length !== (decisionFormat === "choice" ? 1 : eligible.length) || !eligible.length) throw new Error("Model returned an unexpected response count.");
@@ -300,21 +138,81 @@ export function rankResponses(responses, eligible, decisionFormat = DEFAULT_DECI
   if (decisionFormat === "choice") {
     const answer = responses[0]?.answers?.action;
     if (answer?.type !== "choice") throw new Error("Invalid action choice: expected a typed choice answer.");
-    selectedId = answer.choice;
-    if (typeof selectedId !== "string" || !eligible.some((c) => c.id === selectedId)) throw new Error("Invalid action choice: not one of the offered actions.");
+    const selected = eligible.find(c => optionId(c) === answer.choice);
+    if (typeof answer.choice !== "string" || !selected) throw new Error("Invalid action choice: not one of the offered actions.");
+    selectedId = selected.id;
     probabilities = answer.probabilities;
-    if (!probabilities || Array.isArray(probabilities) || typeof probabilities !== "object" || Object.keys(probabilities).length !== eligible.length || eligible.some((c) => !Object.hasOwn(probabilities, c.id))) throw new Error("Invalid action probabilities: keys must match the offered actions.");
+    if (!probabilities || Array.isArray(probabilities) || typeof probabilities !== "object" || Object.keys(probabilities).length !== eligible.length || eligible.some(c => !Object.hasOwn(probabilities, optionId(c)))) throw new Error("Invalid action probabilities: keys must match the offered actions.");
   }
   const ranking = eligible.map((candidate, index) => {
-    const probability = decisionFormat === "choice" ? probabilities[candidate.id] : responses[index]?.answers?.favorable?.noul;
+    const probability = decisionFormat === "choice" ? probabilities[optionId(candidate)] : responses[index]?.answers?.favorable?.noul;
     if (typeof probability !== "number" || !Number.isFinite(probability) || probability < 0 || probability > 1) throw new Error(`Invalid ${decisionFormat} probability for candidate ${index}.`);
     return { index, id: candidate.id, probability };
   });
   if (decisionFormat === "choice") {
-    // Kev rounds to 2 decimals and Laya to 4; do not reject a legitimate rounded distribution.
     const sum = ranking.reduce((n, r) => n + r.probability, 0);
-    if (Math.abs(sum - 1) > eligible.length * 0.005 + 1e-8) throw new Error("Invalid action probabilities: distribution does not sum to one within rounding tolerance.");
-    if (probabilities[selectedId] < Math.max(...ranking.map((r) => r.probability))) throw new Error("Invalid action choice: contradicts the public probabilities.");
+    if (!(sum > 0) || Math.abs(sum - 1) > eligible.length * 0.005 + 1e-8) throw new Error("Invalid action probabilities: distribution does not sum to one within rounding tolerance.");
+    if (probabilities[responses[0].answers.action.choice] < Math.max(...ranking.map(r => r.probability))) throw new Error("Invalid action choice: contradicts the public probabilities.");
   }
   return ranking.sort((a, b) => b.probability - a.probability || Number(b.id === selectedId) - Number(a.id === selectedId) || a.index - b.index);
+}
+
+/** Sample ONE composite decision. Only used binding heads consume draws. Invalid
+ * answers reject the whole command; a rejected/stale decision is never resampled.
+ * Independent noul ratings are diagnostic scores, NOT a categorical distribution. */
+export function resolveSelection(record, { random = Math.random } = {}) {
+  const ranking = rankDecision(record);
+  if (record.sampling) throw new Error("This decision has already been sampled; score a fresh observation.");
+  record.ranking = ranking;
+  const sampling = record.sampling = { method: SAMPLING_METHOD, complete: false, heads: {} };
+  function draw(question, entries, responseIndex, answer) {
+    const options = entries.map(optionId);
+    const sampled = { method: SAMPLING_METHOD, question, responseIndex, options, sdkChoice: answer.choice,
+      ...sampleDistribution(options.map(id => answer.probabilities[id]), random) };
+    sampled.optionId = options[sampled.index];
+    sampling.heads[question] = sampled;
+    return sampled;
+  }
+  if (record.decisionFormat === "choice") {
+    record.selectedIndex = draw("action", record.eligible, 0, record.responses[0].answers.action).index;
+  } else {
+    record.selectedIndex = ranking[0].index;
+    sampling.heads.action = { method: "highest-noul-rating", responseIndex: record.selectedIndex,
+      optionId: optionId(record.eligible[record.selectedIndex]), index: record.selectedIndex, probability: ranking[0].probability };
+  }
+  const candidate = record.eligible[record.selectedIndex];
+  const choice = { ...candidate, params: { ...candidate.params }, selection: null, weaponSelection: null };
+  const relevant = [candidate.binding, record.bindings.weapon.length ? "weapon" : null].filter(Boolean);
+  // Validate all USED binding distributions before drawing any of them. Unused
+  // responses stay in the trace, but cannot turn a movement into an attack.
+  const validated = Object.fromEntries(relevant.map(question => {
+    const entries = record.bindings[question];
+    const responseIndex = record.requests.findIndex(request => Object.hasOwn(request.questions, question));
+    const answer = record.responses[responseIndex]?.answers?.[question];
+    try { rankResponses([{ answers: { action: answer } }], entries); }
+    catch (error) { throw new Error(`Invalid ${question} selection: ${error.message}`); }
+    return [question, { entries, responseIndex, answer }];
+  }));
+  function select(question) {
+    const { entries, responseIndex, answer } = validated[question];
+    const sampled = draw(question, entries, responseIndex, answer), selected = entries[sampled.index];
+    return { selected, selection: { question, responseIndex, id: selected.id, answer: structuredClone(answer), sampling: sampled } };
+  }
+  const labels = [candidate.label];
+  if (candidate.binding) {
+    const { selected, selection } = select(candidate.binding);
+    choice.selection = selection; choice.params.ref = selected.ref;
+    labels.push(`${selected.id} ${readable(selected.kind)}`);
+  }
+  if (record.bindings.weapon.length) {
+    const { selected, selection } = select("weapon");
+    choice.weaponSelection = { ...selection, name: selected.name };
+    // Keep the desired ID even when it matched the observed HUD. The native
+    // executor checks the CURRENT HUD, since equipment can change during inference.
+    choice.params.weapon = selected.weapon;
+    labels.push(selected.name);
+  }
+  choice.label = choice.choiceText = labels.join(" · ");
+  sampling.complete = true;
+  return choice;
 }

@@ -1,5 +1,4 @@
 import { DEMO_SETUP_HELP } from "./demo-manifest.js";
-import { validateAssistance } from "./assistance.js";
 
 // Qwasm's Sys_Error prints to stdout then exits; this does not always call onAbort.
 export function engineErrorFromLog(message) {
@@ -53,7 +52,7 @@ export class Engine {
       print: report, printErr: report, onAbort: (message) => { fault ||= new Error(`Quake stopped: ${message}`); },
       locateFile: (file) => `/engine/${file}`,
     });
-    if (["_qev_auto", "_qev_live_action", "_qev_new_game", "_qev_assistance", "_qev_input_action", "_qev_live_input", "_qev_screen_version"].some(name => typeof module[name] !== "function") || module._qev_screen_version() !== 1) throw new Error("Engine build is out of date. Run npm run build:engine, then reload.");
+    if (["_qev_auto", "_qev_command", "_qev_live_command", "_qev_new_game", "_qev_screen_version", "_qev_control_version", "_qev_audio_access"].some(name => typeof module[name] !== "function") || module._qev_screen_version() !== 3 || module._qev_control_version() !== 6) throw new Error("Engine build is out of date. Run npm run build:engine, then reload.");
     module.hideConsole = () => {};
     module.showConsole = () => onLog(fault ? "Quake stopped. Correct the error above, then reload the page." : "Quake console opened. Use the game canvas when playing manually.");
     module.captureMouse = () => {}; // pointer lock is only requested by an explicit canvas click
@@ -67,6 +66,7 @@ export class Engine {
       // Initialize SDL audio, but silence it before yielding—even when autoplay is allowed.
       // Bootstrapping still advances until the stopped world is ready.
       engine.pause();
+      engine.watchAudio();
     } catch (error) { throw fault || error; }
     await engine.waitFor((s) => s.ready && s.map === map && s.difficulty === difficulty, 30_000);
     engine.pause();
@@ -75,11 +75,22 @@ export class Engine {
   constructor(module, getFault = () => null) { this.module = module; this.getFault = getFault; }
   // SDL 2.30.9 exposes its Web Audio context on Module.SDL2. Call from a user
   // gesture, before model inference awaits. This never starts/unpauses the game.
+  watchAudio() {
+    const context = this.module.SDL2?.audioContext;
+    if (context && this.audioContext !== context) {
+      this.audioContext?.removeEventListener?.("statechange", this.audioChanged);
+      this.audioContext = context;
+      this.audioChanged = () => this.module._qev_audio_access?.(context.state === "running" ? 1 : 0);
+      context.addEventListener?.("statechange", this.audioChanged);
+    }
+    this.module._qev_audio_access?.(context?.state === "running" ? 1 : 0);
+  }
   async resumeAudio() {
     const { audioContext: context, audio } = this.module.SDL2 || {};
     if (!context || !audio?.scriptProcessorNode || context.state === "closed") throw new Error("Game audio is unavailable. Check browser sound support and reload the page.");
     if (context.state !== "running") await context.resume();
     if (context.state !== "running") throw new Error("The browser kept game audio suspended.");
+    this.watchAudio();
     return true;
   }
   snapshot() {
@@ -87,31 +98,24 @@ export class Engine {
     if (fault) throw fault;
     return JSON.parse(this.module.UTF8ToString(this.module._qev_snapshot()));
   }
-  setAssistance(mode) {
-    validateAssistance(mode);
-    const before = this.snapshot();
-    if (before.assistance === mode) return before;
-    if (!this.module._qev_assistance(mode === "assisted" ? 1 : 0)) throw new Error("Could not change assistance mode.");
-    const after = this.snapshot();
-    if (after.assistance !== mode || !after.paused || after.remaining) throw new Error("Assistance mode did not change safely.");
-    return after;
-  }
-  probe({ dx, dy, slot, generation, ticks = 12 }) {
-    return JSON.parse(this.module.UTF8ToString(this.module._qev_probe(dx, dy, slot, generation, ticks)));
-  }
   startAuto() {
     const session = this.module._qev_auto();
     if (!session) throw new Error("Pause a live game before starting real-time Auto.");
     return session;
   }
+  commandValues(p) {
+    const integers = [p.epoch, p.tick, p.ref, p.weapon, p.ticks];
+    const values = [p.epoch, p.tick, p.ref, p.forward, p.side, p.up, p.yawRate, p.pitchRate, p.fire ? 1 : 0, p.jump ? 1 : 0, p.weapon, p.ticks, p.meleeApproach ? 1 : 0];
+    if (integers.some(v => !Number.isSafeInteger(v) || v < 0 || v > 2147483647) ||
+        values.some(v => !Number.isFinite(v)) || typeof p.fire !== "boolean" || typeof p.jump !== "boolean" ||
+        (p.meleeApproach !== undefined && typeof p.meleeApproach !== "boolean")) throw new Error("Invalid action parameters.");
+    return values;
+  }
   applyLive(p, session) {
-    if (p.input !== undefined && p.input !== "relative") throw new Error("Unknown input type.");
-    const relative = p.input === "relative";
-    const values = relative
-      ? [p.epoch, p.tick, session, p.forward, p.side, p.yawRate, p.pitchRate, p.fire ? 1 : 0, p.ticks]
-      : [p.epoch, p.tick, session, p.dx, p.dy, p.slot, p.generation, p.yaw, p.pitch, p.fire ? 1 : 0, p.ticks];
-    if (values.some((v) => !Number.isFinite(v))) throw new Error("Invalid real-time action parameters.");
-    return !!(relative ? this.module._qev_live_input(...values) : this.module._qev_live_action(...values));
+    if (!Number.isSafeInteger(session) || session < 1 || session > 2147483647) throw new Error("Invalid real-time session.");
+    const values = this.commandValues(p);
+    values.splice(2, 0, session);
+    return !!this.module._qev_live_command(...values);
   }
   pause() { this.module._qev_pause(); }
   play() {
@@ -131,13 +135,7 @@ export class Engine {
     throw new Error("Quake did not finish the requested operation. Check the engine log.");
   }
   async act(p) {
-    if (p.input !== undefined && p.input !== "relative") throw new Error("Unknown input type.");
-    const relative = p.input === "relative";
-    const values = relative
-      ? [p.epoch, p.tick, p.forward, p.side, p.yawRate, p.pitchRate, p.fire ? 1 : 0, p.ticks]
-      : [p.epoch, p.tick, p.dx, p.dy, p.slot, p.generation, p.yaw, p.pitch, p.fire ? 1 : 0, p.ticks];
-    if (values.some((v) => !Number.isFinite(v))) throw new Error("Invalid action parameters.");
-    if (!(relative ? this.module._qev_input_action(...values) : this.module._qev_action(...values))) throw new Error("Action rejected: the world, input mode, or action validation changed. Score again.");
+    if (!this.module._qev_command(...this.commandValues(p))) throw new Error("Action rejected: the world, chosen visible contact, or structural validation changed. Score again.");
     return this.waitFor((s) => s.epoch !== p.epoch || !s.ready || s.remaining === 0);
   }
   async frame() {

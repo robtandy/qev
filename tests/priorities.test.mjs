@@ -7,14 +7,7 @@ import { Agent } from "../src/agent.js";
 import { Stepper } from "../src/stepper.js";
 import { decisionOutcome, modelState } from "../src/decision-cards.js";
 import { replies } from "./replies.mjs";
-
-const state = () => ({ ready: true, alive: true, completed: false, paused: true, owned: true, map: "test",
-  epoch: 1, tick: 20, remaining: 0, controlSession: 1, actionSerial: 0, actionTicks: 0, actionTicksLeft: 0,
-  player: { health: 25, armor: 0, ammo: 5, weapon: "shotgun", position: [0, 0, 24], yaw: 0, pitch: 0, grounded: true },
-  enemies: [{ slot: 7, generation: 1, kind: "monster_army", visible: true, position: [80, 0, 24], distance: 80, bearingRight: 0 }],
-  pickups: [{ slot: 8, generation: 1, kind: "health", visible: true, position: [0, 80, 24], distance: 80, bearingRight: -90 }] });
-const probe = p => ({ blocked: false, supported: true, hazard: false,
-  end: [p.dx * p.ticks * 200 / 60, p.dy * p.ticks * 200 / 60, 24], lineOfSightAtEndpoint: p.slot > 0 ? true : null });
+import { observation as state } from "./observations.mjs";
 const exploreFirst = movePriority(DEFAULT_PRIORITY_ORDER, "explore", 0);
 const permutations = ids => ids.length ? ids.flatMap((id, i) => permutations(ids.filter((_, j) => i !== j)).map(rest => [id, ...rest])) : [[]];
 
@@ -22,7 +15,7 @@ function fixture(options = {}) {
   const snapshot = state(), calls = [], actions = [];
   let finishStep = null;
   const engine = {
-    snapshot: () => structuredClone(snapshot), probe,
+    snapshot: () => structuredClone(snapshot),
     pause() {
       snapshot.paused = true; snapshot.controlSession++; snapshot.remaining = 0; snapshot.actionTicksLeft = 0;
       if (finishStep) { const done = finishStep; finishStep = null; done(engine.snapshot()); }
@@ -38,7 +31,7 @@ function fixture(options = {}) {
 }
 
 test("the shared catalog, default order, and captured objective text are immutable", () => {
-  assert.equal(PRIMARY_OBJECTIVE, "SURVIVE");
+  assert.equal(PRIMARY_OBJECTIVE, "WIN");
   assert.deepEqual(DEFAULT_PRIORITY_ORDER, ["avoid-harm", "get-supplies", "handle-threats", "explore"]);
   assert.equal(new Set(PRIORITIES.map(p => p.id)).size, 4);
   assert.deepEqual(SURVIVAL_OBJECTIVES, objectivesFor());
@@ -61,9 +54,7 @@ for (const [label, invalid] of [
   test(`a ${label} priority order fails closed rather than being silently repaired`, () => {
     assert.throws(() => validatePriorityOrder(invalid), /each known priority exactly once/);
     if (invalid === undefined) return; // Omitting an optional setting intentionally uses the default.
-    let probes = 0;
-    assert.throws(() => prepareDecision(state(), () => { probes++; return {}; }, null, { priorityOrder: invalid }), /each known priority/);
-    assert.equal(probes, 0);
+    assert.throws(() => prepareDecision(state(), null, { priorityOrder: invalid }), /each known priority/);
     const f = fixture(); f.agent.startLive();
     const before = f.engine.snapshot(), generation = f.agent.generation;
     assert.throws(() => f.agent.setPriorities(invalid), /each known priority/);
@@ -85,41 +76,42 @@ test("moves shift intervening priorities without mutating the input or accepting
 for (const decisionFormat of ["choice", "noul"]) {
   test(`${decisionFormat} faithfully sends all 24 priority permutations without contradictory fixed rankings`, () => {
     for (const priorityOrder of permutations(DEFAULT_PRIORITY_ORDER)) {
-      const record = prepareDecision(state(), probe, null, { decisionFormat, priorityOrder, realtime: true });
+      const record = prepareDecision(state(), null, { decisionFormat, priorityOrder, realtime: true });
       const expected = objectivesFor(priorityOrder), prefix = goalPrompt(priorityOrder);
       assert.deepEqual(record.priorityOrder, priorityOrder);
       assert.deepEqual(record.objectives, expected);
       assert.ok(Object.isFrozen(record.priorityOrder) && Object.isFrozen(record.objectives));
       assert.ok(record.sharedState.startsWith(prefix));
       assert.ok(record.candidates.every(c => c.state.startsWith(prefix)));
-      assert.deepEqual(requestsFor(record.eligible, record.sharedState, decisionFormat), record.requests);
+      assert.deepEqual(requestsFor(record.eligible, record.sharedState, decisionFormat, record.grounding), record.requests);
       for (const request of record.requests) {
         assert.ok(request.state.startsWith(prefix));
-        assert.equal(request.state.match(/SURVIVE/g).length, 1);
+        assert.equal(request.state.match(/WIN/g).length, 1);
         for (const [i, text] of expected.entries()) assert.ok(request.state.includes(`${i + 1}. ${text}`));
-        assert.match((request.questions.action || request.questions.favorable).instructions, /listed priorities, highest first/);
+        const action = request.questions.action || request.questions.favorable;
+        if (action) assert.match(action.instructions, /listed priorities, highest first/);
         assert.doesNotMatch(JSON.stringify(request), /only after survival needs|[Ee]xploration is secondary|before exploring|Never risk life for novelty/);
       }
     }
   });
 }
 
-test("empty views and exploration-loop prose respect the current order too", () => {
+test("empty views and observed repetitions respect the current priority order too", () => {
   const s = state(); s.enemies = [];
-  const text = situation(s, null, { recovery: true }, exploreFirst);
+  const text = situation(s, { repeated: 3, actions: [{ action: "Look left", healthChange: 0, ammoChange: 0 }] }, { priorityOrder: exploreFirst });
   assert.ok(text.startsWith(goalPrompt(exploreFirst)));
-  assert.match(text, /weigh a different route against the listed priorities/);
+  assert.match(text, /View repeats 3x \(not location\)/);
   assert.doesNotMatch(text, /before exploring|survival first|only after survival needs/);
 });
 
-test("changing prompt priorities does not secretly change safety filters, action offers, or their order", () => {
-  const restricted = p => ({ ...probe(p), hazard: p.dy < 0 });
-  const before = prepareDecision(state(), restricted, null, { realtime: true });
-  const after = prepareDecision(state(), restricted, null, { realtime: true, priorityOrder: exploreFirst });
+test("changing prompt priorities does not change the unfiltered tactics or target offers", () => {
+  const before = prepareDecision(state(), null, { realtime: true });
+  const after = prepareDecision(state(), null, { realtime: true, priorityOrder: exploreFirst });
   assert.equal(after.offerPolicy, before.offerPolicy);
   assert.deepEqual(after.eligible.map(c => c.id), before.eligible.map(c => c.id));
   assert.deepEqual(after.candidates.map(({ state, ...facts }) => facts), before.candidates.map(({ state, ...facts }) => facts));
-  assert.ok(after.candidates.some(c => !c.allowed && c.filterKind === "geometry"));
+  assert.ok(after.candidates.every(c => c.allowed && !c.filterKind && !c.geometry));
+  assert.deepEqual(after.bindings, before.bindings);
   assert.notEqual(after.requests[0].state, before.requests[0].state);
 });
 

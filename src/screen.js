@@ -1,7 +1,11 @@
 /** Renderer-assisted segmentation, NOT RGB-only vision or metric depth estimation.
- * Only 2D visible extents/counts and labels enter here. No engine IDs, pose or range.
+ * Only 2D visible extents/counts and current animation labels enter here. No
+ * engine IDs, enemy health/deadflag, world-space pose or metric range.
  */
 export const SCREEN_SOURCE = "renderer-visible-pixels";
+// A death animation/corpse is not an active-enemy aim affordance. Unknown poses
+// and downed/recovering zombies remain possible threats; no health lookup.
+export const fallenEnemy = e => e.group === "enemy" && ["death", "dead"].includes(e.pose);
 const MAX_SAMPLES = 8, MAX_AGE_TICKS = 45, MIN_SAMPLE_TICKS = 4;
 const unit = n => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1;
 const integer = n => Number.isSafeInteger(n) && n >= 0;
@@ -17,8 +21,8 @@ export function screenFrame(observation) {
       !Array.isArray(s.viewport) || s.viewport.length !== 4 || !s.viewport.every(integer) || s.viewport[2] < 1 || s.viewport[3] < 1 ||
       s.viewport[2] * s.viewport[3] > 1280 * 1024 || typeof s.distorted !== "boolean") return unknown;
   const entities = [];
-  for (const [group, list] of [["enemy", observation.enemies], ["pickup", observation.pickups]]) {
-    for (const e of (Array.isArray(list) ? list : []).slice(0, 3)) {
+  for (const [group, list] of [["enemy", observation.enemies], ["pickup", observation.pickups], ["feature", observation.features]]) {
+    for (const [sourceIndex, e] of (Array.isArray(list) ? list : []).slice(0, 6).entries()) {
       const p = e.screen, b = p?.bounds;
       if (e.visible !== true || typeof e.kind !== "string" || !/^[a-zA-Z0-9_]{1,64}$/.test(e.kind) ||
           !Array.isArray(b) || b.length !== 4 || !b.every(unit) || b[2] <= b[0] || b[3] <= b[1] ||
@@ -28,9 +32,10 @@ export function screenFrame(observation) {
       // Bounds are rounded by the native JSON serializer; allow one pixel of rounding.
       if (p.pixels > (width * s.viewport[2] + 1) * (height * s.viewport[3] + 1) ||
           (p.aimOverlap && !(b[0] <= 0.5 && b[2] >= 0.5 && b[1] <= 0.5 && b[3] >= 0.5))) continue;
-      entities.push({ group, kind: e.kind, bounds: b.slice(), pixels: p.pixels, width, height,
+      entities.push({ group, sourceIndex, kind: e.kind, bounds: b.slice(), pixels: p.pixels, width, height,
         x: (b[0] + b[2]) / 2, y: (b[1] + b[3]) / 2,
-        aimOverlap: p.aimOverlap, clipped: p.clipped, sameKindCount: p.sameKindCount });
+        aimOverlap: p.aimOverlap, clipped: p.clipped, sameKindCount: p.sameKindCount,
+        pose: ["attack", "hurt", "moving", "idle", "death", "dead", "downed"].includes(e.pose) ? e.pose : "unknown" });
     }
   }
   return { source: SCREEN_SOURCE, available: true, epoch: observation.epoch, frame: s.frame, tick: s.tick,
@@ -39,14 +44,14 @@ export function screenFrame(observation) {
 
 function trend(entity, current, history) {
   const unknown = { trend: "uncertain", evidence: [] };
-  const usable = e => e && e.sameKindCount === 1 && !e.clipped && e.pixels >= 24 && e.height >= 0.025;
+  const usable = e => e && !fallenEnemy(e) && e.pose !== "downed" && e.sameKindCount === 1 && !e.clipped && e.pixels >= 24 && e.height >= 0.025;
   if (current.distorted || !usable(entity)) return unknown;
   const samples = [{ frame: current.frame, tick: current.tick, entity }];
   for (const past of history.slice().reverse()) {
     if (past.tick >= current.tick) continue;
     if (current.tick - past.tick > MAX_AGE_TICKS || past.epoch !== current.epoch || past.distorted || !sameViewport(past.viewport, current.viewport)) break;
     const matches = past.entities.filter(e => e.group === entity.group && e.kind === entity.kind);
-    if (matches.length !== 1 || !usable(matches[0])) break;
+    if (matches.length !== 1 || !usable(matches[0]) || matches[0].pose !== entity.pose) break;
     const e = matches[0], newer = samples.at(-1).entity;
     const fill = o => o.pixels / (o.width * o.height);
     // Not a persistent identity: stop at loss, duplicates, large image motion,
@@ -84,7 +89,7 @@ export class ScreenMemory {
     if (previous && (now.epoch !== previous.epoch || now.frame < previous.frame || now.tick < previous.tick ||
         now.tick - previous.tick > MAX_AGE_TICKS || now.distorted !== previous.distorted || !sameViewport(now.viewport, previous.viewport))) this.reset();
     if (this.latest?.frame === now.frame) return;
-    const signature = f => f.entities.map(e => `${e.group}:${e.kind}:${e.sameKindCount}:${e.clipped}`).sort().join("|");
+    const signature = f => f.entities.map(e => `${e.group}:${e.kind}:${e.pose}:${e.sameKindCount}:${e.clipped}`).sort().join("|");
     // Even a brief observed disappearance between regular samples breaks continuity.
     if (this.latest && signature(this.latest) !== signature(now)) this.samples = [];
     this.latest = now;
@@ -100,5 +105,6 @@ export function describeScreenEntity(e) {
   const horizontal = e.bounds[2] < 0.5 ? "left" : e.bounds[0] > 0.5 ? "right" : "center";
   const vertical = e.bounds[3] < 0.5 ? "above" : e.bounds[1] > 0.5 ? "below" : "level";
   const size = e.height < 0.04 ? "tiny" : e.height < 0.12 ? "small" : e.height < 0.3 ? "medium" : "large";
-  return `${readable(e.kind)} ${horizontal}/${vertical} (${Math.round(e.x * 100)},${Math.round(e.y * 100)}), ${size} h${percent(e.height)}%, aim ${e.aimOverlap ? "on" : "off"}${e.clipped ? ", edge-cut" : ""}${e.trend !== "uncertain" ? `, ${e.trend}` : ""}`;
+  const pose = e.pose === "dead" ? "dead/corpse" : e.pose === "death" ? "dying" : e.pose === "downed" ? "downed, may revive" : e.pose;
+  return `${readable(e.kind)}${pose && pose !== "unknown" ? ` (${pose})` : ""} ${horizontal}/${vertical} (${Math.round(e.x * 100)},${Math.round(e.y * 100)}), ${size} h${percent(e.height)}%, aim ${e.aimOverlap ? "on" : "off"}${e.clipped ? ", edge-cut" : ""}${e.trend !== "uncertain" ? `, ${e.trend}` : ""}`;
 }

@@ -13,7 +13,7 @@ export async function checkPriorities({ evaluate, check, until, call, dragEvents
         [...row.querySelectorAll('button')].every(button=>button.type==='button' && button.getAttribute('aria-label').startsWith('Move '))) &&
       rows[0].querySelector('[data-move="up"]').disabled && rows.at(-1).querySelector('[data-move="down"]').disabled &&
       document.querySelector('#reset-priorities').disabled && document.querySelector('#priority-hint').textContent.includes('Reordering stops play') &&
-      document.querySelector('.priority-note').textContent.includes('geometry/GPS, aim and tactical offers');
+      document.querySelector('.priority-note').textContent.includes('not the available tactics');
   `);
   await evaluate("document.querySelector('[data-priority=explore] [data-move=up]').focus({preventScroll:true})");
   await up('explore');
@@ -71,8 +71,7 @@ export async function checkPriorities({ evaluate, check, until, call, dragEvents
     priorityTest.model={info:{backend:'priority-regression'},decideMany(requests){return new Promise(resolve=>priorityTest.calls.push({requests,resolve}));}};
     qev.agent.getModel=()=>priorityTest.model;
     priorityTest.answer=index=>{
-      const job=priorityTest.calls[index], keys=Object.keys(job.requests[0].questions.action.criteria);
-      job.resolve([{answers:{action:{type:'choice',choice:keys[0],probabilities:Object.fromEntries(keys.map((key,i)=>[key,i===0?1:0]))}}}]);
+      const job=priorityTest.calls[index];job.resolve(testReplies(job.requests,0));
     };
     qev.agent.invalidate()`);
   try {
@@ -157,12 +156,16 @@ export async function checkPriorities({ evaluate, check, until, call, dragEvents
       try {document.querySelector('#export').click();}
       finally {URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}
     })()`);
-    await check("version-7 traces distinguish the active priority order from each decision's original order", `
+    await check("version-13 traces preserve priorities, original responses, replayable samples and concurrent equipment",  `
       const trace=await priorityTest.exported, {objectivesFor}=await import('/src/objective.js');
-      return trace.version===7 && JSON.stringify(trace.priorityOrder)===JSON.stringify(qev.priorityOrder) &&
+      return trace.version===13 && trace.samplingMethod==='categorical-v1' && trace.controlMode==='player-observable' && JSON.stringify(trace.priorityOrder)===JSON.stringify(qev.priorityOrder) &&
         JSON.stringify(trace.objectives)===JSON.stringify(objectivesFor(qev.priorityOrder)) &&
         trace.records[0].priorityOrder[0]==='explore' && trace.records[0].requests[0].state===priorityTest.originalState &&
-        trace.records.every(record=>record.priorityOrder.length===4 && record.objectives.length===4);
+        trace.records.every(record=>record.priorityOrder.length===4 && record.objectives.length===4) &&
+        trace.records.filter(r=>r.selected).every(r=>r.sampling.complete && r.selected.optionId===r.sampling.heads.action.optionId &&
+          r.sampling.heads.action.sdkChoice===r.responses[0].answers.action.choice &&
+          r.selected.weaponSelection.id===r.sampling.heads.weapon.optionId &&
+          r.sampling.heads.weapon.sdkChoice===r.responses.find(response=>response.answers.weapon).answers.weapon.choice);
     `);
   } finally {
     await evaluate(`qev.pause();qev.agent.invalidate();qev.agent.getModel=priorityTest.getModel;

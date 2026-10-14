@@ -5,10 +5,11 @@ import { DecisionCards } from "./decision-cards.js";
 import { Stepper } from "./stepper.js";
 import { PRIMARY_OBJECTIVE, DEFAULT_PRIORITY_ORDER, validatePriorityOrder, objectivesFor } from "./objective.js";
 import { Priorities } from "./priorities.js";
-import { ASSISTANCE, DEFAULT_ASSISTANCE, assistanceOf, validateAssistance } from "./assistance.js";
+import { CONTROL_MODE, OBSERVATION_POLICY, CONTROLLER_POLICY } from "./control.js";
 import { AssistanceHelp } from "./assistance-help.js";
 import { DEMO, DEMO_MAPS } from "./demo-manifest.js";
 import { loadDemo } from "./demo.js";
+import { SAMPLING_METHOD } from "./sampling.js";
 
 const $ = (id) => document.getElementById(id);
 const pageTitle = document.title;
@@ -18,7 +19,6 @@ let engine = null, agent = null, model = null, snapshot = null, respawner = null
 let operation = "", loadingModel = null, autoToken = 0, auto = false, playMode = "inspection";
 let initialPriorityOrder = DEFAULT_PRIORITY_ORDER;
 const currentPriorityOrder = () => agent?.priorityOrder || initialPriorityOrder;
-const currentAssistance = () => snapshot ? assistanceOf(snapshot) : agent?.observedAssistance || DEFAULT_ASSISTANCE;
 const engineLines = [];
 let errorTimer;
 const json = (value) => JSON.stringify(value, null, 2);
@@ -76,10 +76,6 @@ function updateControls() {
   $("auto").disabled = !alive || busy || auto;
   $("auto").setAttribute("aria-pressed", String(auto));
   $("map").disabled = $("difficulty").disabled = !engine || !!operation;
-  $("assistance").disabled = !live || !!operation;
-  $("assistance").value = currentAssistance();
-  const assistanceNote = ASSISTANCE[currentAssistance()].note;
-  if ($("assistance-note").textContent !== assistanceNote) $("assistance-note").textContent = assistanceNote;
   $("export").disabled = !agent?.history.length;
   $("model").closest(".model-setting").classList.toggle("needs-selection", !modelSelected());
   $("model").disabled = $("backend").disabled = !!loadingModel || !!operation;
@@ -189,18 +185,8 @@ async function resetGame() {
   const current = engine.snapshot();
   if (!current.ready) return;
   // Restart the ACTUAL active level/skill, not stale or forcibly changed selectors.
-  // Keep weights, assistance, priorities and historical decisions; never auto-resume.
+  // Keep weights, priorities and historical decisions; never auto-resume.
   return loadLevel(current.map, current.difficulty, "Resetting the current level · stopped…");
-}
-
-function changeAssistance() {
-  if (!engine || operation) { updateControls(); return; }
-  const mode = validateAssistance($("assistance").value);
-  if (mode === currentAssistance()) return;
-  stop(); agent?.invalidate();
-  snapshot = engine.setAssistance(mode); // Pauses and advances the native observation epoch, not the level.
-  agent?.observeLive(snapshot); // Clear navigation/memory at the boundary; never restart input.
-  updateControls();
 }
 
 async function startDemo() {
@@ -326,7 +312,6 @@ $("backend").addEventListener("change", () => {
   // A backend preference alone must not choose or download a default model.
   if (modelSelected() || loadingModel) void guard(loadSelectedModel);
 });
-$("assistance").addEventListener("change", () => guard(changeAssistance));
 $("pause").addEventListener("click", stop);
 $("step").addEventListener("click", () => playFromGesture(step));
 $("auto").addEventListener("click", () => playFromGesture(runAuto));
@@ -334,8 +319,8 @@ $("reset").addEventListener("click", () => guard(resetGame));
 for (const id of ["map", "difficulty"]) $(id).addEventListener("change", () => guard(loadSelectedMap));
 $("speed").addEventListener("change", () => guard(async () => engine?.speed(Number($("speed").value))));
 $("export").addEventListener("click", () => {
-  const priorityOrder = currentPriorityOrder(), assistance = currentAssistance();
-  const url = URL.createObjectURL(new Blob([json({ version: 7, assistance, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), exploration: assistance === "assisted" ? agent.navigation.inspect() : null, observationPolicy: ASSISTANCE[assistance].observationPolicy, controller: ASSISTANCE[assistance].controller, records: agent.history })], { type: "application/json" }));
+  const priorityOrder = currentPriorityOrder();
+  const url = URL.createObjectURL(new Blob([json({ version: 13, samplingMethod: SAMPLING_METHOD, controlMode: CONTROL_MODE, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), memory: agent.observations.describe(snapshot), observationPolicy: OBSERVATION_POLICY, controller: CONTROLLER_POLICY, records: agent.history })], { type: "application/json" }));
   const link = document.createElement("a"); link.href = url; link.download = "qev-trace.json"; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
@@ -358,9 +343,8 @@ addEventListener("resize", fitGame);
 setInterval(poll, 100);
 $("difficulty").value = String(DEFAULT_DIFFICULTY);
 $("model").value = "";
-$("assistance").value = DEFAULT_ASSISTANCE;
 renderDecision();
 fitGame();
 // Diagnostic handles, not an externally supported API. Tests use the same engine/agent as the UI.
-window.qev = { get engine() { return engine; }, get agent() { return agent; }, get model() { return model; }, get respawner() { return respawner; }, get playMode() { return playMode; }, get assistance() { return currentAssistance(); }, get priorityOrder() { return currentPriorityOrder(); }, get engineLog() { return engineLines.slice(); }, pause: stop, score, step };
+window.qev = { get engine() { return engine; }, get agent() { return agent; }, get model() { return model; }, get respawner() { return respawner; }, get playMode() { return playMode; }, get controlMode() { return CONTROL_MODE; }, get priorityOrder() { return currentPriorityOrder(); }, get engineLog() { return engineLines.slice(); }, pause: stop, score, step };
 void guard(startDemo);

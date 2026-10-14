@@ -87,7 +87,7 @@ test("the card presents the selected candidate, not a guessed maximum from round
   r.eligible.push({ id: "left", label: "Walk left", choiceText: "Walk left; face that direction.", params: { ticks: 45 } });
   r.ranking = [{ index: 0, probability: .5 }, { index: 1, probability: .5 }];
   assert.equal(decisionView(r).action, "Walk left; face that direction.");
-  assert.equal(decisionOutcome(r).selectedAction, "left");
+  assert.equal(decisionOutcome(r).selectedAction.id, "left");
 });
 
 test("presentation preserves raw protocol payloads, errors, and internal lifecycle for export", () => {
@@ -129,13 +129,12 @@ test("the HTML keeps the card feed and compact controls without the old game pan
   assert.match(html, /Last 5 · newest first/);
   const priorities = html.match(/<aside class="priority-column"[\s\S]*?<\/aside>/)[0];
   assert.match(priorities, /<h2>Priorities<\/h2>/);
-  assert.match(priorities, /Goal: SURVIVE · highest first/);
+  assert.match(priorities, /Goal: WIN · highest first/);
   assert.match(priorities, /id="priorities" role="list"[^>]*aria-describedby="priority-hint"/);
   assert.match(priorities, /Reordering stops play/);
-  assert.match(priorities, /id="assistance-note"[^>]*role="status"/);
-  assert.match(priorities, /geometry\/GPS, aim and tactical offers/);
-  assert.match(html, /id="assistance" aria-describedby="assistance-note"/);
-  assert.match(html, /<option value="assisted" selected>On<\/option><option value="unassisted">Off · visible telemetry<\/option>/);
+  assert.match(priorities, /id="control-note"/);
+  assert.match(priorities, /Priorities change the prompt, not the available tactics/);
+  assert.doesNotMatch(html, /id="assistance"|value="assisted"|value="unassisted"/);
   assert.match(priorities, /id="priority-status"[^>]*role="status"/);
   assert.match(priorities, /id="reset-priorities"[^>]*disabled/);
   const masthead = html.match(/<header class="masthead">([\s\S]*?)<\/header>/)[1];

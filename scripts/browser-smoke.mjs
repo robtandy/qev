@@ -1,5 +1,5 @@
 // Real Chromium + real Qwasm, using only the installed LibreQuake demo.
-// --model runs Laya; --explore runs levels; --compare evaluates choice/noul; --assistance adds a short aids-on/off trial.
+// --model runs Laya; --explore runs levels; --compare evaluates choice/noul; --trial runs the single controller.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -10,10 +10,12 @@ import { compareDecisions } from "./compare-decisions.mjs";
 import { beginAudioChecks, checkAudioPlayback } from "./browser-audio.mjs";
 import { checkModelSelection } from "./browser-model-selection.mjs";
 import { checkPriorities } from "./browser-priorities.mjs";
-import { checkAssistance, runAssistanceTrials } from "./browser-assistance.mjs";
+import { checkController, runPlayerTrial } from "./browser-controller.mjs";
+import { checkRecenter } from "./browser-recenter.mjs";
 import { checkScreen, checkScreenModel } from "./browser-screen.mjs";
 import { checkHelp } from "./browser-help.mjs";
 import { checkReset } from "./browser-reset.mjs";
+import { replies as fixtureReplies, decisionReplies as fixtureDecisionReplies } from "../tests/replies.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, timeout = 30_000) {
@@ -25,11 +27,11 @@ async function until(fn, timeout = 30_000) {
   throw error || new Error("Timed out waiting for browser state.");
 }
 const chromePath = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-if (process.argv.slice(2).some((arg) => !["--model", "--explore", "--compare", "--assistance"].includes(arg))) throw new Error("Usage: node scripts/browser-smoke.mjs [--model] [--explore] [--compare] [--assistance]. Model/trial flags load Laya. Install the demo with npm run setup:demo first.");
+if (process.argv.slice(2).some(arg => !["--model", "--explore", "--compare", "--trial"].includes(arg))) throw new Error("Usage: node scripts/browser-smoke.mjs [--model] [--explore] [--compare] [--trial]. Model/trial flags load Laya. Install the demo with npm run setup:demo first.");
 const explore = process.argv.includes("--explore");
 const compare = process.argv.includes("--compare");
-const assistanceTrials = process.argv.includes("--assistance");
-const runModel = explore || compare || assistanceTrials || process.argv.includes("--model");
+const playerTrial = process.argv.includes("--trial");
+const runModel = explore || compare || playerTrial || process.argv.includes("--model");
 await mkdir(resolve(root, "build/browser-profile"), { recursive: true });
 const server = makeServer();
 await new Promise((r) => server.listen(8091, "127.0.0.1", r));
@@ -66,6 +68,7 @@ try {
   assert.ok((await call("Browser.getBrowserCommandLine")).arguments.includes("--mute-audio"), "Test browser must have audio output muted before running any checks.");
   console.log("PASS test browser audio output is muted (--mute-audio)");
   await call("Runtime.enable"); await call("Page.enable"); await call("Network.enable");
+  await call("Page.addScriptToEvaluateOnNewDocument", { source: `{ const replies = ${fixtureReplies.toString()}; window.testReplies = replies; window.testDecisionReplies = ${fixtureDecisionReplies.toString()}; }` });
   await call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
   const navigate = async (path) => {
     const url = `http://127.0.0.1:8091${path}`;
@@ -223,7 +226,7 @@ try {
     window.beforePause = qev.engine.snapshot();
     await new Promise((r) => setTimeout(r, 400));
     const now = qev.engine.snapshot();
-    return now.ready && now.alive && now.paused && now.tick === beforePause.tick && JSON.stringify(now.player.position) === JSON.stringify(beforePause.player.position);
+    return now.ready && now.alive && now.paused && now.tick === beforePause.tick && JSON.stringify(now) === JSON.stringify(beforePause);
   `);
   console.log("Initial full-level snapshot:", await evaluate("qev.engine.snapshot()"));
   await checkPriorities({ evaluate, check, until, call, dragEvents });
@@ -233,7 +236,7 @@ try {
     return column.children.length===1 && column.firstElementChild.className==='screen' &&
       !document.querySelector('#history, #human, #stats, #navigation, #observation, #engine-log, .screen-label') &&
       !!document.querySelector('#decisions') && document.querySelector('#map').options.length >= 8 &&
-      typeof qev.engine.snapshot().player.silverKey === 'boolean' && qev.agent.navigation.summary(qev.engine.snapshot()).goalComplete === false;
+      typeof qev.engine.snapshot().player.silverKey === 'boolean' && qev.agent.navigation===undefined && !document.querySelector('#assistance');
   `);
   await check("playback exposes Start, Stop, Step, and Reset, without separate score/frame buttons", `
     return [...document.querySelectorAll('.controls button')].map(b=>b.textContent.trim()).join(',')==='Start,Stop,Step,Reset' &&
@@ -282,9 +285,9 @@ try {
   `);
   await check("engine bridge rejects stale ticks, non-finite input, and unbounded leases", `
     const s = qev.engine.snapshot(), m = qev.engine.module;
-    return m._qev_action(s.epoch, s.tick - 1, 0, 0, -1, 0, 0, 0, 0, 12) === 0 &&
-      m._qev_action(s.epoch, s.tick, NaN, 0, -1, 0, 0, 0, 0, 12) === 0 &&
-      m._qev_action(s.epoch, s.tick, 0, 0, -1, 0, 0, 0, 0, 999) === 0;
+    return m._qev_command(s.epoch, s.tick-1, 0, 0,0,0,0,0,0,0,0,12)===0 &&
+      m._qev_command(s.epoch, s.tick, 0, NaN,0,0,0,0,0,0,0,12)===0 &&
+      m._qev_command(s.epoch, s.tick, 0, 0,0,0,0,0,0,0,0,999)===0;
   `);
   await check("gravity can settle the real player onto supported ground before movement tests", `
     for (let i = 0; i < 90 && !qev.engine.snapshot().player.grounded; i++) await qev.engine.frame();
@@ -292,7 +295,16 @@ try {
   `);
   await checkAudioPlayback({ evaluate, check, call, until });
   await checkScreen({ evaluate, check, until, pressKeys });
-  await checkAssistance({ evaluate, check, until, bindKillForTest, killPlayerViaConsole });
+  const combatEvidence = await checkController({ evaluate, check, until, onCorpse: async () => {
+    const image = await call('Page.captureScreenshot', { format: 'png' });
+    await writeFile(resolve(root, 'build/combat-awareness-corpse.png'), Buffer.from(image.data, 'base64'));
+  } });
+  await writeFile(resolve(root, 'build/combat-awareness-native.json'), JSON.stringify(combatEvidence, null, 2));
+  const recenterEvidence = await checkRecenter({ evaluate, check, until, onView: async name => {
+    const image = await call('Page.captureScreenshot', { format: 'png' });
+    await writeFile(resolve(root, `build/recenter-${name}.png`), Buffer.from(image.data, 'base64'));
+  } });
+  await writeFile(resolve(root, 'build/recenter-native.json'), JSON.stringify(recenterEvidence, null, 2));
   await checkReset({ evaluate, check, until, call, bindKillForTest, killPlayerViaConsole });
   await evaluate(`
     window.originalModel = qev.agent.getModel;
@@ -302,13 +314,11 @@ try {
       return new Promise((resolve) => mockCalls.push({requests, resolve, eligible: structuredClone(qev.agent.current.eligible)}));
     }};
     window.mockResponses = (c, selected) => {
-      const keys = Object.keys(c.requests[0].questions.action.criteria);
-      if(selected < 0) selected = 0;
-      return [{answers:{action:{type:'choice',choice:keys[selected],probabilities:Object.fromEntries(keys.map((key,i)=>[key,keys.length===1?1:i===selected?0.9:0.1/(keys.length-1)]))}},raw_probabilities:{action:[0.123456789,0.876543211]},extra:'<img src=x onerror="window.injected=true">'}];
+      return testReplies(c.requests,Math.max(0,selected)).map(r=>({...r,extra:'<img src=x onerror="window.injected=true">'}));
     };
     window.resolveMock = async () => {
       const c = mockCalls.at(-1);
-      const move = c.eligible.findIndex((c) => c.params.dx || c.params.dy);
+      const move = c.eligible.findIndex(c => c.id==='forward');
       c.responses = mockResponses(c, move);
       c.resolve(c.responses);
       await new Promise((r) => setTimeout(r, 30));
@@ -332,13 +342,16 @@ try {
       card.querySelector('.decision-status').textContent==='Accepted' && !card.querySelector('.decision-status').hidden &&
       JSON.stringify(JSON.parse(card.querySelector('[data-payload="response"]').textContent)) === JSON.stringify(mockCalls[0].responses);
   `);
-  await check("one shared state offers every eligible action together and preserves the SDK choice", `
+  await check("one shared state offers every eligible action, with sampled selection separate from the untouched SDK choice", `
     const r = qev.agent.current, input = r.requests[0];
-    return r.objective==='SURVIVE' && r.objectives.length===4 && input.state.startsWith('Goal: SURVIVE') &&
-      input.questions.action.instructions.includes('SURVIVE') &&
-      r.decisionFormat === 'choice' && r.requests.length === 1 && input.questions.action.type === 'choice' &&
-      JSON.stringify(Object.keys(input.questions.action.criteria)) === JSON.stringify(r.eligible.map(c=>c.id)) &&
-      r.eligible[r.selectedIndex].id === r.responses[0].answers.action.choice &&
+    return r.objective==='WIN' && r.objectives.length===4 && input.state.startsWith('Goal: WIN') &&
+      input.questions.action.instructions.includes('WIN') &&
+      r.decisionFormat === 'choice' && r.requests.every(request=>request.state===input.state && Object.keys(request.questions).length===1) && input.questions.action.type === 'choice' &&
+      JSON.stringify(Object.keys(input.questions.action.criteria)) === JSON.stringify(r.eligible.map(c=>c.optionId)) &&
+      r.sampling.complete && r.eligible[r.selectedIndex].optionId === r.sampling.heads.action.optionId &&
+      r.sampling.heads.action.sdkChoice === r.responses[0].answers.action.choice &&
+      r.sampling.heads.action.draw>=0 && r.sampling.heads.action.draw<1 &&
+      JSON.parse(document.querySelector('.decision-card [data-payload="outcome"]').textContent).sampling.method==='categorical-v1' &&
       document.querySelector('.decision-card [data-payload="state"]').textContent===input.state &&
       document.querySelector('.decision-card .candidates').textContent.includes('Request [0]');
   `);
@@ -374,10 +387,10 @@ try {
     const after = qev.engine.snapshot(); await new Promise((r) => setTimeout(r, 300));
     return after.tick - before.tick === 12 && after.paused && qev.agent.current.status === 'executed' && qev.engine.snapshot().tick === after.tick;
   `);
-  console.log("Executed action:", await evaluate("({id:qev.agent.current.eligible[qev.agent.current.selectedIndex].id,before:qev.agent.current.before.player.position,after:qev.agent.current.after.player.position})"));
-  await check("a valid movement primitive changes position in the actual engine", `
-    const r = qev.agent.current;
-    return r.eligible[r.selectedIndex].params.dx !== 0 || r.eligible[r.selectedIndex].params.dy !== 0 ? Math.hypot(...r.after.player.position.map((n,i) => n-r.before.player.position[i])) > 1 : false;
+  console.log("Executed action:", await evaluate("({id:qev.agent.current.selected.id,params:qev.agent.current.selected.params,outcome:qev.agent.current.execution})"));
+  await check("the native controller applies the chosen relative movement without exposing coordinates", `
+    const r=qev.agent.current;return r.selected.params.forward===1 && r.execution.ticksApplied===12 &&
+      !('position' in r.before.player) && !('position' in r.after.player);
   `);
   if (await evaluate("qev.agent.current.eligible[qev.agent.current.selectedIndex].params.fire")) {
     await check("tracking and firing spends ammunition against a genuinely visible engine target", `
@@ -418,7 +431,7 @@ try {
   await check("Pause during an action cancels remaining ticks and releases inputs", `
     const before = qev.engine.snapshot();
     qev.engine.speed(0.1);
-    const p = qev.engine.act({epoch:before.epoch,tick:before.tick,dx:0,dy:0,slot:-1,generation:0,yaw:before.player.yaw+30,pitch:0,fire:false,ticks:12});
+    const p = qev.engine.act({epoch:before.epoch,tick:before.tick,ref:0,forward:0,side:0,up:0,yawRate:90,pitchRate:0,fire:false,jump:false,weapon:0,ticks:12});
     await new Promise((r) => setTimeout(r, 250)); qev.pause();
     const after = await p; qev.engine.speed(1);
     return after.tick - before.tick < 12 && after.remaining === 0 && after.paused;
@@ -490,7 +503,7 @@ try {
       Number(style.opacity)===1 && contrast>=4.5;
   `);
   await evaluate(`window.resolveScan = async () => {
-    const c = mockCalls.at(-1), scan = c.eligible.findIndex((x) => x.id === 'scan-left');
+    const c = mockCalls.at(-1), scan = c.eligible.findIndex(x => x.id === 'turn-left');
     c.resolve(mockResponses(c, scan));
     await new Promise((r) => setTimeout(r, 30));
   }; resolveScan()`);
@@ -502,7 +515,7 @@ try {
     const after = qev.engine.snapshot();
     return qev.agent.busy && qev.agent.active === firstLive && !after.paused && after.actionTicksLeft > 0 &&
       after.actionSerial === before.actionSerial && after.actionTicks > before.actionTicks &&
-      after.tick-before.tick >= 12 && after.player.yaw !== before.player.yaw;
+      after.tick-before.tick >= 12 && after.screen.frame>before.screen.frame && firstLive.selected.params.yawRate===90;
   `);
   await evaluate("resolveScan()");
   await check("replacement preserves exact observation/apply times and does not pause the engine", `
@@ -557,7 +570,7 @@ try {
   `);
   await check("rejected replies keep their exact response and show no extra lifecycle badge", `
     const pending=qev.score(), call=mockCalls.at(-1);
-    const response=[{answers:{action:{type:'choice',choice:'not-offered',probabilities:{'not-offered':1}}},extra:'<img src=x onerror="window.injected=true">'}];
+    const response=testReplies(call.requests);response[0]={answers:{action:{type:'choice',choice:'not-offered',probabilities:{'not-offered':1}}},extra:'<img src=x onerror="window.injected=true">'};
     call.resolve(response);
     try {await pending;return false;} catch { /* Expected protocol validation error. */ }
     const card=document.querySelector('.decision-card');
@@ -567,7 +580,7 @@ try {
   `);
   await check("native live leases expire to neutral inputs without freezing world time", `
     const session = qev.engine.startAuto(), s = qev.engine.snapshot();
-    const p = {epoch:s.epoch,tick:s.tick,dx:0,dy:0,slot:-1,generation:0,yaw:s.player.yaw+10,pitch:0,fire:false,ticks:6};
+    const p = {epoch:s.epoch,tick:s.tick,ref:0,forward:0,side:0,up:0,yawRate:90,pitchRate:0,fire:false,jump:false,weapon:0,ticks:6};
     if(!qev.engine.applyLive(p,session)) return false;
     await new Promise((r) => setTimeout(r, 400));
     const a = qev.engine.snapshot(); qev.pause();
@@ -577,63 +590,36 @@ try {
     const oldSession = qev.engine.startAuto();
     await new Promise((r) => setTimeout(r, 1100)); qev.pause();
     const session = qev.engine.startAuto(), s = qev.engine.snapshot();
-    const p = {epoch:s.epoch,tick:s.tick,dx:0,dy:0,slot:-1,generation:0,yaw:s.player.yaw,pitch:0,fire:false,ticks:45};
+    const p = {epoch:s.epoch,tick:s.tick,ref:0,forward:0,side:0,up:0,yawRate:0,pitchRate:0,fire:false,jump:false,weapon:0,ticks:45};
     const rejected = !qev.engine.applyLive(p,oldSession) && !qev.engine.applyLive({...p,tick:s.tick-61},session) &&
       !qev.engine.applyLive({...p,tick:s.tick+1},session) && !qev.engine.applyLive({...p,epoch:s.epoch-1},session) &&
-      !qev.engine.applyLive({...p,ticks:46},session) && !qev.engine.applyLive({...p,slot:9999,fire:true},session) &&
-      qev.engine.module._qev_live_action(s.epoch,s.tick,session,NaN,0,-1,0,0,0,0,45) === 0;
+      !qev.engine.applyLive({...p,ticks:46},session) && !qev.engine.applyLive({...p,ref:2147483000,fire:true},session) &&
+      qev.engine.module._qev_live_command(s.epoch,s.tick,session,0,NaN,0,0,0,0,0,0,0,45)===0;
     qev.pause(); return rejected;
   `);
   await check("a wall-time watchdog also releases commands when slowed simulation cannot expire the tick lease", `
     qev.engine.speed(0.1);
     const session = qev.engine.startAuto(), s = qev.engine.snapshot();
-    qev.engine.applyLive({epoch:s.epoch,tick:s.tick,dx:0,dy:0,slot:-1,generation:0,yaw:s.player.yaw+90,pitch:0,fire:false,ticks:45},session);
+    qev.engine.applyLive({epoch:s.epoch,tick:s.tick,ref:0,forward:0,side:0,up:0,yawRate:90,pitchRate:0,fire:false,jump:false,weapon:0,ticks:45},session);
     await new Promise((r) => setTimeout(r, 1700));
     const after = qev.engine.snapshot(); qev.pause(); qev.engine.speed(1);
     return !after.paused && after.actionTicksLeft === 0 && after.actionTicks > 0 && after.actionTicks < 45 && /watchdog/.test(after.stopReason);
   `);
-  await check("repeated forward choices do not reverse an unfinished turn in the real engine", `
-    qev.agent.invalidate(); await qev.engine.loadMap('qev_encounter');
-    for(let i=0;i<90 && !qev.engine.snapshot().player.grounded;i++) await qev.engine.frame();
-    const {Agent} = await import('/src/agent.js');
-    const calls=[], model={info:{backend:'steering-test'},decideMany(requests){return new Promise(resolve=>calls.push({requests,resolve}));}};
-    const agent=new Agent({engine:qev.engine,getModel:()=>model});
-    const delta=(a,b)=>((a-b+540)%360+360)%360-180;
-    // Face the open side of the arena to isolate steering from the new threat-aware
-    // shortlist. A retreat/cover offer may legitimately displace forward in combat.
-    for(let i=0;i<6 && Math.abs(delta(0,qev.engine.snapshot().player.yaw))>1;i++) {
-      const s=qev.engine.snapshot();
-      await qev.engine.act({epoch:s.epoch,tick:s.tick,dx:0,dy:0,slot:-1,generation:0,yaw:0,pitch:0,fire:false,ticks:12});
-    }
-    if(qev.engine.snapshot().enemies.length) throw new Error('Steering fixture still faces a threat');
-    qev.engine.speed(0.25);
+  await check("repeated forward choices use unchanged relative commands, never stale absolute headings", `
+    qev.agent.invalidate();await qev.engine.loadMap('qev_encounter',0);
+    const {Agent}=await import('/src/agent.js'), calls=[];
+    const model={info:{backend:'relative-regression'},decideMany(requests){return new Promise(resolve=>calls.push({requests,resolve}));}};
+    const agent=new Agent({engine:qev.engine,getModel:()=>model});qev.engine.speed(0.25);
     try {
       agent.startLive();
-      let pending=agent.score({realtime:true});
-      const turn=agent.current.eligible.findIndex(c=>c.category==='exploration' && Math.abs(delta(c.params.yaw,agent.current.before.player.yaw))>=30);
-      if(turn<0) throw new Error('No turning walk is available in the regression arena');
-      const course=agent.current.eligible[turn].params.yaw;
-      calls.at(-1).resolve(mockResponses(calls.at(-1),turn)); await pending;
-      if(!agent.applyLive()) throw new Error('Initial turning walk was rejected');
-      let error=Math.abs(delta(course,qev.engine.snapshot().player.yaw)), replacements=0;
-      const evidence=[];
       for(let i=0;i<3;i++) {
-        pending=agent.score({realtime:true});
-        const r=agent.current, forward=r.eligible.findIndex(c=>c.id==='forward');
-        const valid=forward>=0 && r.steering.source==='held-course' && Math.abs(delta(course,r.eligible[forward].params.yaw))<0.01;
-        await new Promise(resolve=>setTimeout(resolve,160));
-        calls.at(-1).resolve(mockResponses(calls.at(-1),Math.max(0,forward))); await pending;
-        if(!valid) throw new Error('Steering reference regression: '+JSON.stringify({i,course,steering:r.steering,choices:r.eligible.map(c=>({id:c.id,yaw:c.params.yaw,ticks:c.params.ticks})),before:r.before,now:qev.engine.snapshot()}));
-        const accepted=agent.applyLive(); if(accepted) replacements++;
-        evidence.push({i,accepted,steering:r.steering,params:r.eligible[forward].params,now:qev.engine.snapshot()});
-        // Current geometry may reject an old probe; rejection must leave the held course alone.
-        const next=Math.abs(delta(course,qev.engine.snapshot().player.yaw));
-        if(next>error+0.1) throw new Error('Turn reversed: '+JSON.stringify({i,error,next,course,now:qev.engine.snapshot()}));
-        error=next;
+        const pending=agent.score({realtime:true}),r=agent.current,index=r.eligible.findIndex(c=>c.id==='forward');
+        await new Promise(resolve=>setTimeout(resolve,160));calls.at(-1).resolve(mockResponses(calls.at(-1),index));await pending;
+        if(!agent.applyLive())throw new Error('Relative movement was rejected');
+        if(r.selected.params.forward!==1 || r.selected.params.yawRate!==0 || r.selected.params.ref!==0 || r.steering)
+          throw new Error('Unexpected steering '+JSON.stringify(r.selected));
       }
-      await new Promise(resolve=>setTimeout(resolve,1000));
-      if(!replacements || Math.abs(delta(course,qev.engine.snapshot().player.yaw))>=1) throw new Error('Turn did not finish with a forward replacement: '+JSON.stringify({course,replacements,evidence,now:qev.engine.snapshot()}));
-      return true;
+      return qev.engine.snapshot().actionTicksLeft>0;
     } finally {agent.pause();qev.engine.speed(1);}
   `);
   await evaluate("(async()=>{qev.agent.invalidate(); await qev.engine.loadMap('qev_encounter',2);document.querySelector('#map').value='lq_e0m6';document.querySelector('#difficulty').value='3';})()");
@@ -735,47 +721,22 @@ try {
     console.log('Real-time evidence:', await evaluate(`({samples:liveSamples.length,decisions:qev.agent.history.filter(r=>r.id>${id}&&r.appliedAt).map(r=>({id:r.id,ms:r.ms,observedTick:r.before.tick,appliedTick:r.appliedAt.tick,ticksApplied:r.execution?.ticksApplied,status:r.status}))})`));
     await writeFile(resolve(root, "build/live-history.json"), await evaluate("JSON.stringify(qev.agent.history.filter(r=>r.model.arch==='laya'),null,2)"));
   }
-  if (explore) {
-    const reports = [];
-    for (const map of ['lq_e0m1','lq_e0m2']) {
-      await evaluate(`document.querySelector('#map').value=${JSON.stringify(map)}; document.querySelector('#map').dispatchEvent(new Event('change',{bubbles:true}))`);
-      await until(() => evaluate(`qev.engine.snapshot().ready && qev.engine.snapshot().paused && qev.engine.snapshot().map===${JSON.stringify(map)} && !qev.agent.busy && !document.querySelector('#auto').disabled`));
-      const firstId = await evaluate('qev.agent.sequence');
-      const initialObservation = await evaluate('qev.engine.snapshot()');
-      await evaluate(`window.trialRecords=new Map(); window.savedOnChange=qev.agent.onChange;
-        qev.agent.onChange=()=>{const r=qev.agent.current;if(r && r.id>${firstId}) trialRecords.set(r.id,r);savedOnChange();};
-        document.querySelector('#auto').click()`);
-      const started = Date.now();
-      while (Date.now() - started < 30_000) {
-        await sleep(500);
-        if (await evaluate("!qev.engine.snapshot().alive || qev.engine.snapshot().completed || document.querySelector('#auto').getAttribute('aria-pressed')==='false'")) break;
-      }
-      await evaluate('qev.pause()');
-      await until(() => evaluate('!qev.agent.busy'), 15_000);
-      const report = await evaluate(`({map:${JSON.stringify(map)},observation:qev.engine.snapshot(),exploration:qev.agent.navigation.inspect(),records:[...trialRecords.values()]})`);
-      await evaluate('qev.agent.onChange=savedOnChange; delete window.trialRecords; delete window.savedOnChange');
-      report.start = initialObservation;
-      reports.push(report);
-      console.log('Full-level exploration:', {map,alive:report.observation.alive,completed:report.observation.completed,cells:report.exploration.rememberedCells,moved:report.exploration.distanceMoved,scans:report.exploration.stationaryScans,decisions:report.records.length,applied:report.records.filter(r=>r.appliedAt).length,choices:report.records.filter(r=>r.appliedAt).map(r=>r.eligible[r.selectedIndex].id)});
-      await writeFile(resolve(root, `build/exploration-${map}.json`), JSON.stringify(report, null, 2));
-      assert.ok(report.records.some(r=>r.appliedAt), 'the full-level run must actually apply a model choice');
-      // Survival may correctly hold cover instead of maximizing distance or newly visited cells.
-      assert.ok(report.records.every(r=>r.objective==='SURVIVE' && r.requests.every(x=>x.state.startsWith('Goal: SURVIVE'))), 'every full-level request makes survival primary');
-      assert.equal(report.exploration.goalComplete, report.observation.completed, 'the navigation completion flag still means engine-confirmed level completion, not a survival score');
+  if (explore || playerTrial) {
+    for (const map of (explore ? ['lq_e0m1','lq_e0m2'] : ['lq_e0m6'])) {
+      const report=await runPlayerTrial({evaluate,until,map,durationMs:explore?30000:12000});
+      await writeFile(resolve(root,`build/player-trial-${map}.json`),JSON.stringify(report,null,2));
+      assert.ok(report.records.some(r=>r.appliedAt),'the episode must apply actual model decisions');
+      assert.ok(report.records.every(r=>r.eligible.every(c=>c.id!=='weapon')),'equipment cannot consume a standalone action');
+      assert.ok(report.records.some(r=>r.execution?.ticksApplied>0 && ['forward','side','up','yawRate','pitchRate','fire','jump'].some(key=>r.selected.params[key])),
+        'the real opening must execute more than neutral waits or equipment changes');
+      assert.ok(report.records.every(r=>r.objective==='WIN' && r.controlMode==='player-observable'));
+      assert.equal(report.records.filter(r=>r.warnings?.length).length,0,'no input truncation in gameplay');
+      console.log('Illustrative player-observable episode:',{map,alive:report.end.alive,completed:report.end.completed,
+        health:report.end.player.health,ammo:report.end.player.ammo,...report.summary});
+      console.log('Trial caveat:',report.caveat);
     }
-    await writeFile(resolve(root, 'build/exploration-summary.json'), JSON.stringify(reports.map(r=>({map:r.map,alive:r.observation.alive,completed:r.observation.completed,cells:r.exploration.rememberedCells,moved:r.exploration.distanceMoved,applied:r.records.filter(x=>x.appliedAt).length})),null,2));
   }
   if (compare) await compareDecisions({ evaluate, root });
-  if (assistanceTrials) {
-    const report = await runAssistanceTrials({ evaluate, check, until, onStopped: async mode => {
-      await evaluate("window.scrollTo({top:0,behavior:'instant'})");
-      const image = await call('Page.captureScreenshot', {format:'png'});
-      await writeFile(resolve(root, `build/qev-${mode}-trial.png`), Buffer.from(image.data,'base64'));
-    } });
-    await writeFile(resolve(root, 'build/assistance-trials.json'), JSON.stringify(report,null,2));
-    console.log('Illustrative assistance trials:', report.runs.map(({records,start,end,choices,...summary})=>summary));
-    console.log('Trial caveat:', report.caveat);
-  }
   await evaluate("window.scrollTo({top:document.querySelector('.workbench').offsetTop-10,behavior:'instant'})");
   await sleep(100);
   const shot = await call("Page.captureScreenshot", { format: "png" });

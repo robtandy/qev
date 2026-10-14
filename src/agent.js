@@ -1,16 +1,25 @@
-import { distance, prepareDecision, rankResponses, DEFAULT_DECISION_FORMAT, validateDecisionFormat, MAX_DECISION_AGE_TICKS, MAX_DECISION_AGE_MS } from "./decisions.js";
-import { ExplorationMemory } from "./navigation.js";
+import { prepareDecision, rankDecision, resolveSelection, DEFAULT_DECISION_FORMAT, validateDecisionFormat, MAX_DECISION_AGE_TICKS, MAX_DECISION_AGE_MS } from "./decisions.js";
 import { DEFAULT_PRIORITY_ORDER, validatePriorityOrder } from "./objective.js";
-import { DEFAULT_ASSISTANCE, assistanceOf } from "./assistance.js";
 import { ScreenMemory } from "./screen.js";
+import { ObservationMemory } from "./perception.js";
+
+// Actual camera-cleanup ticks observed in this window, including neutral live
+// time after a target lease. Not movement, attack ticks, or extra Step frames.
+function recoveryTicks(before, after) {
+  const start = before?.viewRecovery?.ticks, end = after?.viewRecovery?.ticks;
+  return before?.epoch === after?.epoch && Number.isSafeInteger(start) && Number.isSafeInteger(end) && end >= start ? end - start : null;
+}
 
 /** DOM-free lifecycle: frozen score/step inspection, or single-flight real-time decisions. */
 export class Agent {
   #priorityOrder;
-  constructor({ engine, getModel, onChange = () => {}, decisionFormat = DEFAULT_DECISION_FORMAT, priorityOrder = DEFAULT_PRIORITY_ORDER }) {
+  #random;
+  constructor({ engine, getModel, onChange = () => {}, decisionFormat = DEFAULT_DECISION_FORMAT, priorityOrder = DEFAULT_PRIORITY_ORDER, random = Math.random }) {
     // Fixed for this controller's lifetime: an in-flight response cannot change interpretation.
     Object.defineProperty(this, "decisionFormat", { value: validateDecisionFormat(decisionFormat), enumerable: true });
     this.#priorityOrder = validatePriorityOrder(priorityOrder);
+    if (typeof random !== "function") throw new Error("The sampling source must be a function.");
+    this.#random = random; // Injectable for deterministic tests, fixed for this controller's lifetime.
     this.engine = engine;
     this.getModel = getModel;
     this.onChange = onChange;
@@ -21,9 +30,8 @@ export class Agent {
     this.inflight = null;
     this.executing = false;
     this.memory = null;
-    this.navigation = new ExplorationMemory();
+    this.observations = new ObservationMemory();
     this.screenMemory = new ScreenMemory();
-    this.observedAssistance = DEFAULT_ASSISTANCE;
     this.liveSession = null;
     this.liveMap = null;
     this.active = null;
@@ -48,8 +56,8 @@ export class Agent {
     if (this.current && ["scoring", "scored", "stepping"].includes(this.current.status)) this.current.status = "cancelled";
     this.current = null;
     this.scoredModel = null;
-    this.memory = null;
-    this.screenMemory.reset();
+    // Stopping/changing priorities does not erase legitimate observations. Both
+    // memories reset themselves on a new world/epoch, never use hidden locations.
     this.onChange();
   }
   pause() {
@@ -72,16 +80,12 @@ export class Agent {
     this.onChange();
   }
   observeObservation(now) {
-    const assistance = assistanceOf(now);
-    if (assistance !== this.observedAssistance) {
-      this.navigation.reset(); this.screenMemory.reset(); this.memory = null;
-      this.observedAssistance = assistance;
-    }
-    if (assistance === "assisted") this.navigation.observe(now);
-    else this.screenMemory.observe(now);
+    this.screenMemory.observe(now);
+    this.observations.observe(now, this.screenMemory.describe(now));
+    if (this.memory && now.epoch !== this.memory.epoch) this.memory = null;
   }
   liveValid(now, record) {
-    return assistanceOf(now) === record.assistance && now.ready && now.alive && !now.completed && !now.paused && now.owned &&
+    return now.ready && now.alive && !now.completed && !now.paused && now.owned &&
       now.epoch === record.before.epoch && now.controlSession === this.liveSession &&
       now.controlSession === record.before.controlSession && now.tick >= record.before.tick &&
       now.tick - record.before.tick <= MAX_DECISION_AGE_TICKS && performance.now() - record.startedMono <= MAX_DECISION_AGE_MS;
@@ -99,14 +103,15 @@ export class Agent {
     if (realtime && (this.liveSession === null || before.paused || !before.owned || before.controlSession !== this.liveSession)) throw new Error("Start real-time Auto before scoring a moving world.");
     this.observeObservation(before);
     const holding = this.active && before.actionTicksLeft > 0 && before.actionSerial === this.active.actionSerial && before.epoch === this.active.appliedAt.epoch;
-    const heldCandidate = holding ? { ...this.active.eligible[this.active.selectedIndex], decisionId: this.active.id } : null;
-    const heldAction = heldCandidate?.label || null;
-    const prepared = prepareDecision(before, (params) => this.engine.probe(params), this.memory, { realtime, heldAction, heldCandidate, navigation: this.navigation, decisionFormat: this.decisionFormat, priorityOrder: this.priorityOrder, visual: assistanceOf(before) === "unassisted" ? this.screenMemory.describe(before) : null });
+    const heldAction = holding ? this.active.selected.id : null; // Frame-local target IDs would be misleading in a newer view.
+    const visual = this.screenMemory.describe(before);
+    const prepared = prepareDecision(before, this.observations.describe(before, visual), {
+      realtime, heldAction, decisionFormat: this.decisionFormat, priorityOrder: this.priorityOrder, visual });
     if (!prepared.eligible.length) throw new Error("No valid actions are available.");
     const record = {
       id: ++this.sequence, status: "scoring", mode: realtime ? "realtime" : "inspection", generation: this.generation,
       model: structuredClone(model.info ?? {}), before: structuredClone(before), ...prepared,
-      responses: null, ranking: [], selectedIndex: null, startedAt: new Date().toISOString(),
+      responses: null, ranking: [], selectedIndex: null, sampling: null, startedAt: new Date().toISOString(),
       startedMono: performance.now(), ms: null, appliedAt: null, after: null, error: null,
     };
     this.current = record;
@@ -121,16 +126,17 @@ export class Agent {
       record.responses = responses; // Untouched response, including raw probabilities and timing.
       const now = this.engine.snapshot();
       record.checkedAt = structuredClone(now);
-      const valid = realtime ? this.liveValid(now, record) : now.ready && now.epoch === before.epoch && now.tick === before.tick && now.paused && now.alive && !now.completed && assistanceOf(now) === record.assistance;
+      const valid = realtime ? this.liveValid(now, record) : now.ready && now.epoch === before.epoch && now.tick === before.tick && now.paused && now.alive && !now.completed;
       if (job.generation !== this.generation || model !== this.getModel() || !valid) {
         record.status = "discarded";
         record.error = "The controller, world, or decision age changed; this response cannot be applied.";
         return null;
       }
-      record.ranking = rankResponses(responses, record.eligible, record.decisionFormat);
-      record.warnings = model.info?.arch === "laya" && responses.some((r) => r.usage?.input_tokens >= 512)
-        ? ["Laya reached its 512-token input limit; some text may have been truncated."] : [];
-      record.selectedIndex = record.ranking[0].index;
+      record.ranking = rankDecision(record);
+      record.warnings = model.info?.arch === "laya" && responses.some(r => r.usage?.input_tokens >= 512)
+        ? ["Laya reached its 512-token input limit; some text may have been truncated. No action applied."] : [];
+      if (record.warnings.length) throw new Error(record.warnings[0]);
+      record.selected = resolveSelection(record, { random: this.#random });
       record.status = "scored";
       this.scoredModel = model;
       return record;
@@ -156,25 +162,18 @@ export class Agent {
       return false;
     }
     record.checkedAt = structuredClone(now);
-    const choice = record.eligible[record.selectedIndex];
+    const choice = record.selected;
     this.observeObservation(now);
-    // Assisted inputs revalidate targets/routes; relative inputs only validate structural bounds
-    // and session/world freshness. Neither path silently substitutes a different choice.
+    // Structural bounds, current visibility and session freshness only. Never
+    // choose another target/tactic or test hidden geometry on the model's behalf.
     if (!this.engine.applyLive(choice.params, this.liveSession)) {
       record.status = "rejected";
-      record.error = "The target, ammunition, or route changed before this action could be applied.";
+      record.error = "The chosen visible contact or structural validation changed before application.";
       this.onChange();
       return false;
     }
     this.finishLive(now, "Replaced by a newer model decision.");
     record.appliedAt = structuredClone(now);
-    if (record.assistance === "assisted") {
-      record.appliedGeometry = this.engine.probe(choice.params);
-      this.navigation.chosen(choice, record.appliedGeometry);
-      record.appliedNavigation = this.navigation.summary(now);
-    } else {
-      record.appliedGeometry = null; record.appliedNavigation = null;
-    }
     record.actionSerial = this.engine.snapshot().actionSerial;
     record.ageTicksAtApply = now.tick - record.before.tick;
     record.ageMsAtApply = performance.now() - record.startedMono;
@@ -209,48 +208,39 @@ export class Agent {
     record.after = structuredClone(after);
     record.execution = {
       ticksApplied: after.actionSerial === record.actionSerial ? after.actionTicks : null,
+      weaponPresses: after.actionSerial === record.actionSerial ? after.weaponPresses ?? null : null,
+      meleeApproachTicks: after.actionSerial === record.actionSerial ? after.meleeApproachTicks ?? null : null,
+      viewRecoveryTicks: recoveryTicks(record.appliedAt, after),
       // This observation may be later than lease expiry; do not label the whole window active.
       observedEndTick: after.tick,
       stopReason: after.stopReason || reason,
     };
     record.status = after.epoch !== record.appliedAt.epoch || after.paused ? "interrupted" :
-      after.actionTicksLeft > 0 ? "replaced" : record.execution.ticksApplied === record.eligible[record.selectedIndex].params.ticks ? "executed" : "interrupted";
+      after.actionTicksLeft > 0 ? "replaced" : record.execution.ticksApplied === record.selected.params.ticks ? "executed" : "interrupted";
     this.remember(record, record.appliedAt, after);
   }
   remember(record, before, after) {
     if (after.epoch !== before.epoch || !after.player) return;
-    const choice = record.eligible[record.selectedIndex];
-    if (record.assistance === "unassisted") {
-      record.navigationAfter = null;
-      this.memory = { epoch: after.epoch, label: choice.label, realtime: record.mode === "realtime",
-        damage: Math.max(0, before.player.health - after.player.health), ammoChange: after.player.ammo - before.player.ammo };
-      return; // Never infer displacement, visits or actor identities from the redacted mode.
-    }
-    if (record.mode !== "realtime") this.navigation.chosen(choice);
-    this.navigation.outcome(choice, before, after, record.appliedNavigation || record.navigation,
-      record.execution?.ticksApplied ?? after.actionTicks ?? (after.tick - before.tick));
-    record.navigationAfter = this.navigation.summary(after);
-    const contactId = (e) => `${e.slot}:${e.generation}`;
-    const seen = new Set([...before.enemies, ...before.pickups].map(contactId));
-    const newContact = [...after.enemies, ...after.pickups].some((e) => !seen.has(contactId(e)));
-    this.memory = {
-      epoch: after.epoch, label: choice.label, realtime: record.mode === "realtime",
-      displacement: distance(after.player.position, before.player.position),
-      damage: Math.max(0, before.player.health - after.player.health),
-      scansWithoutNewContacts: choice.id.startsWith("scan-") && !newContact ? (this.memory?.scansWithoutNewContacts || 0) + 1 : 0,
-    };
+    const choice = record.selected;
+    const ticks = record.execution?.ticksApplied ?? after.actionTicks ?? after.tick - before.tick;
+    if (!(ticks > 0)) return;
+    this.observeObservation(after);
+    this.observations.outcome(choice, before, after, ticks);
+    record.memoryAfter = this.observations.describe(after, this.screenMemory.describe(after));
+    this.memory = { epoch: after.epoch, label: choice.label, realtime: record.mode === "realtime",
+      damage: Math.max(0, before.player.health - after.player.health), ammoChange: after.player.ammo - before.player.ammo };
   }
   async step() {
     if (this.busy) throw new Error("Wait for the current score or step to finish.");
     const record = this.current;
     if (!record || record.status !== "scored" || record.mode !== "inspection") throw new Error("Score the current paused observation first.");
     const now = this.engine.snapshot();
-    if (!now.paused || !now.alive || now.completed || now.epoch !== record.before.epoch || now.tick !== record.before.tick || record.generation !== this.generation || this.scoredModel !== this.getModel() || assistanceOf(now) !== record.assistance) {
+    if (!now.paused || !now.alive || now.completed || now.epoch !== record.before.epoch || now.tick !== record.before.tick || record.generation !== this.generation || this.scoredModel !== this.getModel()) {
       record.status = "discarded";
       this.onChange();
       throw new Error("The world changed. Score a fresh observation.");
     }
-    const choice = record.eligible[record.selectedIndex];
+    const choice = record.selected;
     if (!choice?.allowed) throw new Error("The selected action is invalid.");
     this.executing = true;
     record.status = "stepping";
@@ -259,6 +249,8 @@ export class Agent {
     try {
       const after = await this.engine.act(choice.params);
       record.after = structuredClone(after);
+      record.execution = { ticksApplied: after.actionTicks ?? after.tick - record.before.tick, weaponPresses: after.weaponPresses ?? null, meleeApproachTicks: after.meleeApproachTicks ?? null,
+        viewRecoveryTicks: recoveryTicks(record.before, after), observedEndTick: after.tick, stopReason: after.stopReason };
       record.status = generation === this.generation && after.epoch === record.before.epoch && after.tick - record.before.tick === choice.params.ticks ? "executed" : "interrupted";
       if (generation === this.generation) this.remember(record, record.before, after);
       return after;

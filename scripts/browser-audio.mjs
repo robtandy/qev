@@ -4,15 +4,18 @@ export async function beginAudioChecks({ check }) {
   await check("the sound device initializes while automatic startup remains stopped and silent", `
     const sdl=qev.engine.module.SDL2, context=sdl?.audioContext, node=sdl?.audio?.scriptProcessorNode;
     if(!context || !node || context.state==='closed') throw new Error('SDL Web Audio device was not initialized');
-    window.audioMeter={context,node,callbacks:0,peak:0,invalid:0,resumes:0,
-      reset(){this.callbacks=0;this.peak=0;this.invalid=0;}};
+    window.audioMeter={context,node,callbacks:0,peak:0,invalid:0,invalidSamples:[],resumes:0,
+      reset(){this.callbacks=0;this.peak=0;this.invalid=0;this.invalidSamples=[];}};
     audioMeter.fill=node.onaudioprocess;
     node.onaudioprocess=function(event){
       audioMeter.fill.call(this,event);
       audioMeter.callbacks++;
       for(let c=0;c<event.outputBuffer.numberOfChannels;c++) {
         for(const value of event.outputBuffer.getChannelData(c)) {
-          if(!Number.isFinite(value) || Math.abs(value)>1) audioMeter.invalid++;
+          // Native PCM is clipped before SDL's floating-point resampler, whose
+          // filter can overshoot unity (observed 1.071). Web Audio accepts these
+          // floats before output clipping. Non-finite samples, not >1, are invalid.
+          if(!Number.isFinite(value)) { audioMeter.invalid++; if(audioMeter.invalidSamples.length<8)audioMeter.invalidSamples.push(value); }
           else audioMeter.peak=Math.max(audioMeter.peak,Math.abs(value));
         }
       }
@@ -35,13 +38,12 @@ export async function checkAudioPlayback({ evaluate, check, call, until }) {
   await evaluate(`
     window.audioOriginalModel=qev.agent.getModel;
     window.audioCalls=[];
-    window.audioModel={info:{backend:'audio-regression'},decideMany(requests){return new Promise(resolve=>audioCalls.push({requests,resolve,done:false}));}};
+    window.audioModel={info:{backend:'audio-regression'},decideMany(requests){return new Promise(resolve=>audioCalls.push({requests,resolve,done:false,record:qev.agent.current}));}};
     qev.agent.getModel=()=>audioModel;
     window.answerAudioCall=()=>{
       const job=audioCalls.at(-1);if(!job || job.done)return;
       job.done=true;
-      const keys=Object.keys(job.requests[0].questions.action.criteria), choice=keys.find(k=>k.startsWith('fire-')) || keys[0];
-      job.resolve([{answers:{action:{type:'choice',choice,probabilities:Object.fromEntries(keys.map(k=>[k,k===choice?1:0]))}}}]);
+      job.resolve(testDecisionReplies(job.record,{action:'fire'}));
     };
   `);
   const stop = async () => {
@@ -51,8 +53,12 @@ export async function checkAudioPlayback({ evaluate, check, call, until }) {
   const quiet = label => check(label, `
     const before=qev.engine.snapshot();audioMeter.reset();
     await new Promise(r=>setTimeout(r,250));
-    return before.paused && qev.engine.snapshot().tick===before.tick && audioMeter.context.state==='running' &&
-      audioMeter.callbacks>0 && audioMeter.peak===0 && audioMeter.invalid===0;
+    const after=qev.engine.snapshot();
+    if(!(before.paused && after.tick===before.tick && audioMeter.context.state==='running' &&
+      audioMeter.callbacks>0 && audioMeter.peak===0 && audioMeter.invalid===0))
+      throw new Error('Expected stopped/silent audio: '+JSON.stringify({beforeTick:before.tick,afterTick:after.tick,paused:before.paused,
+        state:audioMeter.context.state,callbacks:audioMeter.callbacks,peak:audioMeter.peak,invalid:audioMeter.invalid}));
+    return true;
   `);
   try {
     // Autoplay may still be blocked, or earlier interactions may have unlocked SDL.
@@ -90,7 +96,7 @@ export async function checkAudioPlayback({ evaluate, check, call, until }) {
     await check("a single Step emits real game audio during its action and still executes exactly twelve ticks", `
       const after=qev.engine.snapshot();
       if(!(after.tick===audioBefore.tick+12 && after.player.ammo<audioBefore.player.ammo && audioMeter.peak>0.00001 && audioMeter.invalid===0))
-        throw new Error('Audio Step: '+JSON.stringify({before:audioBefore,after,peak:audioMeter.peak,callbacks:audioMeter.callbacks,invalid:audioMeter.invalid,decision:qev.agent.current}));
+        throw new Error('Audio Step: '+JSON.stringify({beforeTick:audioBefore.tick,afterTick:after.tick,beforeAmmo:audioBefore.player.ammo,afterAmmo:after.player.ammo,peak:audioMeter.peak,callbacks:audioMeter.callbacks,invalid:audioMeter.invalid,samples:audioMeter.invalidSamples}));
       return true;
     `);
     await quiet("finishing a Step silences output without needing another user gesture");

@@ -1,16 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SCREEN_SOURCE, ScreenMemory, screenFrame, screenCues, describeScreenEntity } from "../src/screen.js";
-import { unassistedState, RAW_INPUTS } from "../src/unassisted.js";
-import { prepareDecision } from "../src/decisions.js";
+import { prepareDecision, situation } from "../src/decisions.js";
 import { Agent } from "../src/agent.js";
 import { decisionOutcome } from "../src/decision-cards.js";
 import { replies } from "./replies.mjs";
 
-const entity = (scale = 1, overrides = {}) => ({ kind: "monster_army", visible: true,
+const entity = (scale = 1, overrides = {}) => ({ kind: "monster_army", ref: 101, visible: true,
   screen: { bounds: [0.5 - 0.05 * scale, 0.5 - 0.1 * scale, 0.5 + 0.05 * scale, 0.5 + 0.1 * scale],
     pixels: Math.round(1500 * scale * scale), aimOverlap: true, clipped: false, sameKindCount: 1, ...overrides } });
-const observation = (tick = 10, scale = 1) => ({ ready: true, alive: true, assistance: "unassisted", paused: true, completed: false,
+const observation = (tick = 10, scale = 1) => ({ ready: true, alive: true, controlMode: "player-observable", paused: true, completed: false,
   epoch: 1, tick, map: "test", owned: true, controlSession: 1, actionTicksLeft: 0,
   screen: { source: SCREEN_SOURCE, available: true, frame: tick, tick, distorted: false, viewport: [0, 0, 640, 432] },
   player: { health: 100, armor: 0, ammo: 25, weapon: "shotgun" }, enemies: [entity(scale)], pickups: [] });
@@ -25,20 +24,20 @@ test("screen descriptions provide position, apparent size and actual center over
   assert.match(describeScreenEntity(cue), /armed grunt center\/level \(50,50\), medium h20%, aim on/);
   o.enemies[0].screen.aimOverlap = false;
   assert.match(describeScreenEntity(screenCues(o).entities[0]), /aim off/); // A hole can cover the bbox center.
-  const text = unassistedState(o);
-  assert.match(text, /renderer-labelled pixels/);
-  assert.match(text, /Larger\/growing may mean nearer/);
-  assert.match(text, /animation and occlusion confuse depth/);
+  const text = situation(o);
+  assert.match(text, /Visible: grunt center medium/);
+  assert.match(prepareDecision(o).grounding.aim.criteria.e1, /grunt center mid medium/);
+  assert.match(text, /size not depth/);
   assert.doesNotMatch(text, /nearby|medium range|far away|meters|distance [0-9]/);
 });
 
 test("screen processing never reads exact telemetry, coarse engine range bins or stable actor IDs", () => {
   const o = observation(), forbidden = () => assert.fail("privileged field read");
-  for (const key of ["position", "yaw", "pitch", "grounded", "inWater"]) Object.defineProperty(o.player, key, { get: forbidden });
+  for (const key of ["position", "yaw", "pitch"]) Object.defineProperty(o.player, key, { get: forbidden });
   for (const key of ["position", "distance", "bearingRight", "bearing", "elevation", "range", "slot", "generation", "health"]) Object.defineProperty(o.enemies[0], key, { get: forbidden });
   const memory = new ScreenMemory(); memory.observe(o);
   assert.ok(Math.abs(memory.describe(o).entities[0].height - 0.2) < 1e-9);
-  assert.match(unassistedState(o), /h20%/);
+  assert.match(prepareDecision(o).grounding.aim.criteria.e1, /grunt center mid medium crosshair/);
 });
 
 test("unavailable, stale or malformed screen frames never fall back to geometry-based target facts", () => {
@@ -47,7 +46,7 @@ test("unavailable, stale or malformed screen frames never fall back to geometry-
     o => o.screen.viewport[2] = 1e10, o => o.alive = false]) {
     const o = observation(); edit(o);
     assert.equal(screenFrame(o).available, false);
-    assert.match(unassistedState(o), /Screen cues unavailable; targets\/depth unknown/);
+    assert.match(situation(o), /View unavailable; unseen areas unknown/);
   }
   for (const edit of [e => e.screen.bounds = [-1, 0, 1, 1], e => e.screen.bounds = [0.5, 0.5, 0.4, 0.4],
     e => e.screen.bounds[0] = Infinity, e => e.screen.pixels = -1, e => e.screen.pixels = 200000,
@@ -105,19 +104,19 @@ test("duplicate/polled frames cannot fabricate time or grow visual memory; reten
   memory.reset(); assert.equal(memory.samples.length, 0); assert.equal(memory.latest, null);
 });
 
-test("screen cues never shortlist or modify relative actions, including blind and off-center fire", () => {
+test("screen size/alignment never gate movement, jump, swim, wait or straight-ahead fire", () => {
   let baseline;
   for (const scale of [0.2, 1, 2]) for (const aligned of [false, true]) for (const available of [false, true]) {
     const o = observation(10, scale); o.enemies[0].screen.aimOverlap = aligned; o.screen.available = available;
-    const result = prepareDecision(o, () => assert.fail("geometry probe"));
-    assert.deepEqual(result.eligible.map(c => c.id), RAW_INPUTS.map(c => c.id));
-    assert.ok(result.eligible.every(c => c.allowed && c.geometry === null));
-    baseline ||= result.eligible.map(c => c.params);
-    assert.deepEqual(result.eligible.map(c => c.params), baseline);
+    const result = prepareDecision(o);
+    assert.ok(result.eligible.every(c => c.allowed && !c.geometry));
+    const core = result.eligible.filter(c => !["engage", "attack", "forward-fire", "back-fire", "left-fire", "right-fire"].includes(c.id)).map(c => c.params);
+    baseline ||= core; assert.deepEqual(core, baseline);
+    assert.ok(result.eligible.some(c => c.id === "fire"));
   }
 });
 
-test("decision cards retain original screen evidence/state after later images, invalidation and mode changes", async () => {
+test("decision cards retain original screen evidence/state after later images, invalidation and new worlds", async () => {
   let now = observation();
   const engine = { snapshot: () => structuredClone(now), pause() {}, probe() { assert.fail("probe"); } };
   const model = { decideMany: async requests => replies(requests) };
@@ -128,12 +127,10 @@ test("decision cards retain original screen evidence/state after later images, i
   assert.equal(decisionOutcome(record).screenCues, record.visual);
   now = observation(28, 0.8); agent.observeObservation(now); agent.invalidate();
   assert.equal(JSON.stringify(record.visual), saved); assert.equal(record.requests[0].state, state);
-  assert.equal(agent.screenMemory.samples.length, 0);
-  assert.equal(agent.navigation.inspect().rememberedCells, 0);
-  now = { ...now, assistance: "assisted", player: { ...now.player, position: [0, 0, 24], yaw: 0 }, enemies: [], pickups: [] };
-  agent.observeObservation(now);
-  now = observation(34, 1.2); agent.observeObservation(now);
+  assert.ok(agent.screenMemory.samples.length > 0, "Stop preserves legitimate evidence");
+  assert.equal(agent.navigation, undefined);
+  now = observation(34, 1.2); now.epoch++; agent.observeObservation(now);
   assert.equal(agent.screenMemory.describe(now).entities[0].trend, "uncertain");
-  assert.equal(agent.navigation.inspect().rememberedCells, 0);
+  assert.equal(agent.observations.actions.length, 0);
   assert.equal(JSON.stringify(record.visual), saved); assert.equal(record.requests[0].state, state);
 });

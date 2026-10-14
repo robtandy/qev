@@ -119,55 +119,55 @@ test("an engine fault rejects waits before querying an exited WASM instance or t
 });
 
 function inputFixture() {
-  let state = { ready: true, alive: true, paused: true, epoch: 1, tick: 10, remaining: 0, assistance: "assisted" };
-  const calls = [];
+  const state = { ready: true, alive: true, paused: true, epoch: 1, tick: 10, remaining: 0, controlMode: "player-observable" }, calls = [];
   const module = { UTF8ToString: x => x, _qev_snapshot: () => JSON.stringify(state),
-    _qev_assistance(value) { calls.push(["mode", value]); state = { ...state, assistance: value ? "assisted" : "unassisted", epoch: state.epoch + 1, paused: true, remaining: 0 }; return 1; },
-    _qev_input_action(...values) { calls.push(["input", ...values]); return 1; },
-    _qev_live_input(...values) { calls.push(["live-input", ...values]); return 1; },
-    _qev_action(...values) { calls.push(["assisted", ...values]); return 1; },
-    _qev_live_action(...values) { calls.push(["live-assisted", ...values]); return 1; },
-    _qev_probe() { assert.fail("input dispatch must not query geometry"); },
-  };
+    _qev_command(...values) { calls.push(["command", ...values]); return 1; },
+    _qev_live_command(...values) { calls.push(["live-command", ...values]); return 1; } };
   return { engine: new Engine(module), module, calls, state };
 }
-const relativeInput = () => ({ input: "relative", epoch: 1, tick: 10, forward: 1, side: 0, yawRate: 60, pitchRate: -45, fire: true, ticks: 12 });
+const input = () => ({ epoch: 1, tick: 10, ref: 72, forward: 1, side: 0, up: 0, yawRate: 60, pitchRate: -45, fire: true, jump: false, weapon: 0, ticks: 12 });
 
-test("assistance changes are explicit, paused, verified, and reject invalid modes before native calls", () => {
+test("there is one command boundary, with no assistance or geometry-probe API", () => {
+  const { engine } = inputFixture();
+  assert.equal(engine.setAssistance, undefined); assert.equal(engine.probe, undefined);
+  assert.equal(engine.snapshot().controlMode, "player-observable");
+  assert.equal(engine.snapshot().assistance, undefined);
+});
+
+test("composite actions dispatch the exact chosen target, keys and original observation tick", async () => {
+  const { engine, calls } = inputFixture(), p = input();
+  await engine.act(p);
+  assert.deepEqual(calls[0], ["command", 1, 10, 72, 1, 0, 0, 60, -45, 1, 0, 0, 12, 0]);
+  assert.equal(engine.applyLive(p, 42), true);
+  assert.deepEqual(calls[1], ["live-command", 1, 10, 42, 72, 1, 0, 0, 60, -45, 1, 0, 0, 12, 0]);
+});
+
+test("unresolved refs/weapons, nonfinite parameters and fractional IDs never reach native commands", async () => {
   const { engine, calls } = inputFixture();
-  for (const value of [null, undefined, true, false, "off", "unknown"]) assert.throws(() => engine.setAssistance(value), /Invalid assistance/);
-  assert.deepEqual(calls, []);
-  const after = engine.setAssistance("unassisted");
-  assert.equal(after.assistance, "unassisted"); assert.equal(after.paused, true); assert.equal(after.epoch, 2);
-  assert.deepEqual(calls, [["mode", 0]]);
-  engine.setAssistance("unassisted"); assert.equal(calls.length, 1, "no-op does not disturb control");
-  engine.setAssistance("assisted"); assert.deepEqual(calls[1], ["mode", 1]);
-});
-
-test("a native mode failure or mismatched resulting mode cannot be reported as success", () => {
-  const { engine, module } = inputFixture();
-  module._qev_assistance = () => 0;
-  assert.throws(() => engine.setAssistance("unassisted"), /Could not change/);
-  module._qev_assistance = () => 1;
-  assert.throws(() => engine.setAssistance("unassisted"), /did not change safely/);
-});
-
-test("relative actions use only the raw native entry points and never fabricate a target or probe", async () => {
-  const { engine, calls } = inputFixture(), input = relativeInput();
-  await engine.act(input);
-  assert.deepEqual(calls[0], ["input", 1, 10, 1, 0, 60, -45, 1, 12]);
-  assert.equal(engine.applyLive(input, 42), true);
-  assert.deepEqual(calls[1], ["live-input", 1, 10, 42, 1, 0, 60, -45, 1, 12]);
-});
-
-test("unknown input types and nonfinite relative numbers never reach either native action path", async () => {
-  const { engine, calls } = inputFixture();
-  for (const key of ["epoch", "tick", "forward", "side", "yawRate", "pitchRate", "ticks"]) {
-    const input = { ...relativeInput(), [key]: NaN };
-    await assert.rejects(engine.act(input), /Invalid action/);
-    assert.throws(() => engine.applyLive(input, 1), /Invalid real-time/);
+  for (const key of ["epoch", "tick", "ref", "forward", "side", "up", "yawRate", "pitchRate", "weapon", "ticks"]) {
+    for (const value of [NaN, Infinity, undefined, null]) {
+      const p = { ...input(), [key]: value };
+      await assert.rejects(engine.act(p), /Invalid action/); assert.throws(() => engine.applyLive(p, 1), /Invalid action/);
+    }
   }
-  await assert.rejects(engine.act({ ...relativeInput(), input: "other" }), /Unknown input/);
-  assert.throws(() => engine.applyLive({ ...relativeInput(), input: "other" }, 1), /Unknown input/);
+  for (const key of ["epoch", "tick", "ref", "weapon", "ticks"]) await assert.rejects(engine.act({ ...input(), [key]: 1.5 }), /Invalid action/);
+  for (const key of ["fire", "jump", "meleeApproach"]) await assert.rejects(engine.act({ ...input(), [key]: "true" }), /Invalid action/);
+  for (const session of [0, NaN, null, 1.5, -1, 2**32]) assert.throws(() => engine.applyLive(input(), session), /Invalid real-time session/);
   assert.deepEqual(calls, []);
+});
+
+test("native rejection remains a rejection and never substitutes another command", async () => {
+  const { engine, module, calls } = inputFixture();
+  module._qev_command = () => 0; module._qev_live_command = () => 0;
+  await assert.rejects(engine.act(input()), /Action rejected/);
+  assert.equal(engine.applyLive(input(), 1), false); assert.deepEqual(calls, []);
+});
+
+test("audio availability follows the actual Web Audio state without starting the world", async () => {
+  const { engine, context } = audioFixture(); const values = []; let listener;
+  engine.module._qev_audio_access = n => values.push(n);
+  context.addEventListener = (name, callback) => { assert.equal(name, "statechange"); listener = callback; };
+  engine.watchAudio(); assert.deepEqual(values, [0]);
+  await engine.resumeAudio(); assert.equal(values.at(-1), 1);
+  context.state = "suspended"; listener(); assert.equal(values.at(-1), 0);
 });

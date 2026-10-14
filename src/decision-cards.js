@@ -14,15 +14,16 @@ export function latestDecisions(history) {
 /** Read the actual request payload, never a reconstructed observation or unsent candidate prose. */
 export function modelState(record) {
   const states = record.requests.map(request => request.state);
-  return states.length === 1 ? states[0] : JSON.stringify(states, null, 2);
+  return states.length && states.every(state => state === states[0]) ? states[0] : JSON.stringify(states, null, 2);
 }
 
 export function decisionView(record) {
   const status = decisionStatus(record);
-  const choice = record.selectedIndex == null ? null : record.eligible[record.selectedIndex];
+  const choice = record.selected || (record.selectedIndex == null ? null : record.eligible[record.selectedIndex]);
   const ticks = record.execution?.ticksApplied;
-  const meta = [...(record.assistance ? [`aids ${record.assistance === "assisted" ? "on" : "off"}`] : []), `tick ${record.before.tick}${record.appliedAt ? ` → ${record.appliedAt.tick}` : ""}`];
+  const meta = [`tick ${record.before.tick}${record.appliedAt ? ` → ${record.appliedAt.tick}` : ""}`];
   if (record.ms !== null) meta.push(`${Math.round(record.ms)} ms`);
+  if (record.sampling?.complete) meta.push(record.sampling.heads.action.method === "categorical-v1" ? "sampled" : "noul diagnostic");
   if (Number.isFinite(ticks)) meta.push(`${ticks}/${choice?.params.ticks ?? "?"} ticks`);
   return {
     status,
@@ -35,16 +36,16 @@ export function decisionView(record) {
 export function decisionOutcome(record) {
   const before = record.appliedAt || record.before, after = record.after;
   return {
-    status: decisionStatus(record), mode: record.mode, assistance: record.assistance,
+    status: decisionStatus(record), mode: record.mode, controlMode: record.controlMode,
     observationPolicy: record.observationPolicy, controller: record.controller,
     objective: record.objective, priorityOrder: record.priorityOrder, objectives: record.objectives, offerPolicy: record.offerPolicy,
     observationTick: record.before.tick, appliedTick: record.appliedAt?.tick,
     ageTicksAtApply: record.ageTicksAtApply, ageMsAtApply: record.ageMsAtApply,
     observedTicksSinceApply: after?.epoch === before.epoch ? after.tick - before.tick : null,
-    execution: record.execution, selectedAction: record.eligible[record.selectedIndex]?.id,
-    steeringFrame: record.steering, explorationBefore: record.navigation, explorationAfter: record.navigationAfter,
-    screenCues: record.visual,
-    appliedGeometry: record.appliedGeometry, observation: record.before, appliedAt: record.appliedAt,
+    sampling: record.sampling,
+    execution: record.execution, selectedAction: record.selected || record.eligible[record.selectedIndex],
+    observationMemory: record.memory, memoryAfter: record.memoryAfter,
+    screenCues: record.visual, observation: record.before, appliedAt: record.appliedAt,
     after: after || "No final outcome recorded. Accepting a decision does not imply it has executed.",
     error: record.error,
   };
@@ -92,9 +93,9 @@ export class DecisionCards {
     const body = this.element("div", "decision-body");
     const error = this.element("p", "decision-error"), warning = this.element("p", "decision-warning");
     const candidates = this.element("ol", "candidates");
-    candidates.setAttribute("aria-label", "Offered actions, probabilities, and controller filters");
+    candidates.setAttribute("aria-label", "Offered tactics and model probabilities; sampled target and concurrent weapon selections are in the outcome");
     const payloads = {};
-    for (const [key, title] of [["state", record.requests.length > 1 ? "States sent to model" : "State sent to model"], ["request", "Exact request"], ["response", "Exact response"], ["outcome", "Observation & outcome"]]) {
+    for (const [key, title] of [["state", record.requests.some(request => request.state !== record.requests[0].state) ? "States sent to model" : "State sent to model"], ["request", "Exact request"], ["response", "Exact response"], ["outcome", "Observation & outcome"]]) {
       const section = this.element("details", key === "state" ? "payload model-state" : "payload");
       section.dataset.section = key;
       const label = this.element("summary", "", title), copy = this.element("button", "", "Copy");
@@ -133,7 +134,7 @@ export class DecisionCards {
         const row = this.element("li", chosen ? "chosen" : !candidate.allowed ? "filtered" : "");
         const top = this.element("div", "candidate-top");
         top.append(this.element("span", "", `${chosen ? "→ " : ""}${candidate.label}`), this.element("b", "", score ? `${(score.probability * 100).toFixed(1)}%` : "—"));
-        const text = candidate.reason || candidate.offerNote || (index >= 0 ? `${record.decisionFormat === "choice" ? `Request [0] · choice “${candidate.id}”` : `Request [${index}]`} · up to ${candidate.params.ticks} ticks · ${record.assistance === "unassisted" ? "relative inputs; no control aids" : "bounded aim/movement assistance"}` : "Not offered: action budget limit");
+        const text = candidate.reason || candidate.offerNote || (index >= 0 ? `${record.decisionFormat === "choice" ? `Request [0] · choice “${candidate.optionId ?? candidate.id}”` : `Request [${index}]`} · up to ${candidate.params.ticks} ticks · model probability; sampled target and weapon choices in outcome` : "Not offered: action budget limit");
         row.append(top, this.element("small", "", text));
         return row;
       });
