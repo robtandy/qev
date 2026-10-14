@@ -1,4 +1,5 @@
 import { DEMO_SETUP_HELP } from "./demo-manifest.js";
+import { appURL } from "./paths.js";
 
 // Qwasm's Sys_Error prints to stdout then exits; this does not always call onAbort.
 export function engineErrorFromLog(message) {
@@ -43,14 +44,14 @@ export class Engine {
     validateDifficulty(difficulty);
     if (!data.maps.includes(map)) throw new Error("The requested map is not in the LibreQuake demo.");
     let factory;
-    try { factory = (await import("/engine/qwasm.mjs")).default; }
+    try { factory = (await import(appURL("engine/qwasm.mjs"))).default; }
     catch { throw new Error("Engine build not found. Run npm run setup:engine, then npm run build:engine."); }
     let fault = null;
     const report = (message) => { fault ||= engineErrorFromLog(message); onLog(message); };
     const module = await factory({
       canvas, noInitialRun: true, keyboardListeningElement: canvas,
       print: report, printErr: report, onAbort: (message) => { fault ||= new Error(`Quake stopped: ${message}`); },
-      locateFile: (file) => `/engine/${file}`,
+      locateFile: (file) => appURL(`engine/${file}`),
     });
     if (["_qev_auto", "_qev_command", "_qev_live_command", "_qev_new_game", "_qev_screen_version", "_qev_control_version", "_qev_audio_access"].some(name => typeof module[name] !== "function") || module._qev_screen_version() !== 3 || module._qev_control_version() !== 6) throw new Error("Engine build is out of date. Run npm run build:engine, then reload.");
     module.hideConsole = () => {};

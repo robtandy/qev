@@ -102,6 +102,12 @@ fallback. Engine modification/source notices are in `engine/README.md` and `engi
 Publishing integration source does not authorize distributing proprietary Quake data or override
 the separate terms for LibreQuake resources, Kevala or model weights.
 
+The [Pages workflow](pages-deployment.md) publishes only an allowlisted static artifact under
+`/Qev/`. Runtime asset URLs resolve against the application directory, not the domain root;
+workers and Wasm use the same tree without a service worker or special isolation headers.
+The artifact supplies GPL engine/gamecode source downloads and notices, rejects an evaluation
+engine or stale native-source digest, and never copies the general build directory or weights.
+
 All browser validation must launch **and verify `--mute-audio` before loading the app**.
 Inspect actual rendered frames and PCM without producing host sound. Test-only console bindings
 are restored and never become production probes/cheat exports. Synthetic prompts and mocked

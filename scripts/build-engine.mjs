@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { animationHeader } from "./animation-data.mjs";
+import { ENGINE_MODULES, engineSourceDigest } from "./engine-inputs.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const revision = "f56b5e71e4be8effede29bae1785a5306dcc0249";
@@ -30,9 +31,15 @@ if (head !== revision) throw new Error("Unexpected build/qwasm revision; refusin
 const patched = ["quakedef.h", "sys_sdl.c", "cl_main.c", "cl_input.c", "host.c", "model.c", "pr_edict.c", "r_main.c", "d_edge.c", "d_polyse.c", "d_sprite.c", "d_part.c", "d_scan.c", "snd_mix.c"];
 run("git", ["restore", "--source=HEAD", "--", ...patched.map((f) => `WinQuake/${f}`)], source);
 run("git", ["apply", resolve(root, "engine/qwasm.patch")], source);
-for (const file of ["qev_bridge.c", "qev_bridge.h", "qev_pixels.c", "qev_pixels.h", "qev_animation.c", "qev_animation.h", "qev_recenter.c", "qev_recenter.h"]) cpSync(resolve(root, "engine", file), resolve(source, "WinQuake", file));
+const sourceDate = new Date().toISOString().slice(0, 10);
+// GPL modified-file notices travel with both the compiled source and its archive.
+for (const file of patched) {
+  const path = resolve(source, "WinQuake", file);
+  writeFileSync(path, `/* Modified for Qev (${sourceDate} build). See engine/qwasm.patch and engine/README.md in the Qev source distribution. */\n` + readFileSync(path, "utf8"));
+}
+for (const file of ENGINE_MODULES) cpSync(resolve(root, "engine", file), resolve(source, "WinQuake", file));
 writeFileSync(resolve(source, "WinQuake/qev_animation_data.h"), animationHeader(JSON.parse(readFileSync(resolve(root, "engine/animation-labels.json"), "utf8"))));
-// No --preload-file: proprietary game assets are supplied locally in the browser, never built in.
+// No --preload-file: the verified LibreQuake demo is fetched separately in the browser.
 const flags = [
   "-O2", "-sUSE_SDL=2", "-sINITIAL_MEMORY=64MB", "-sSTACK_SIZE=2MB", "-sALLOW_MEMORY_GROWTH=1",
   "-sMODULARIZE=1", "-sEXPORT_ES6=1", "-sEXPORT_NAME=createQevEngine", "-sENVIRONMENT=web",
@@ -45,5 +52,5 @@ const makefile = readFileSync(resolve(source, "WinQuake/Makefile.emscripten"), "
 writeFileSync(resolve(source, "WinQuake/Makefile.qev"), makefile);
 run("bash", ["-c", 'source "$1/emsdk_env.sh" >/dev/null 2>&1; exec make -f Makefile.qev -j4 all "TARGET=$2/qwasm.mjs" "LDFLAGS=$3"', "qev-build", sdk, output, flags], resolve(source, "WinQuake"));
 cpSync(resolve(source, "gnu.txt"), resolve(output, "QWASM-LICENSE.txt"));
-writeFileSync(resolve(output, "build.json"), JSON.stringify({ qwasm: revision, emscripten: "3.1.74", renderer: "software", assetsEmbedded: false, evaluationOnly: evaluation }, null, 2) + "\n");
+writeFileSync(resolve(output, "build.json"), JSON.stringify({ qwasm: revision, emscripten: "3.1.74", renderer: "software", assetsEmbedded: false, evaluationOnly: evaluation, sourceDate, sourceDigest: await engineSourceDigest(root) }, null, 2) + "\n");
 console.log(`Engine built in ${output}. No game assets were embedded.`);

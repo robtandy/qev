@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { loadDemo } from "../src/demo.js";
+import { appURL } from "../src/paths.js";
 import { verifyDemoAsset } from "../scripts/demo-assets.mjs";
 
 function pak(paths) {
@@ -20,7 +21,7 @@ function fixture(transform = (bytes) => new Response(bytes)) {
   const requests = [];
   return { requests, fetcher: async (url, options) => {
     requests.push({ url, options });
-    const index = manifest.files.findIndex((f) => url === `/demo/${f.name}`);
+    const index = manifest.files.findIndex((f) => url === appURL(`demo/${f.name}`));
     assert.notEqual(index, -1, "only demo archives may be requested");
     return transform(archives[index], index);
   } };
@@ -29,7 +30,7 @@ function fixture(transform = (bytes) => new Response(bytes)) {
 test("automatic loading verifies and prepares all matching demo packs without a file picker", async () => {
   const { fetcher, requests } = fixture(), progress = [];
   const data = await loadDemo({ manifest, fetcher, onProgress: (p) => progress.push(p) });
-  assert.deepEqual(requests.map((r) => r.url), ["/demo/pak0.pak", "/demo/pak1.pak", "/demo/pak2.pak"]);
+  assert.deepEqual(requests.map((r) => r.url), ["pak0.pak", "pak1.pak", "pak2.pak"].map(name => appURL(`demo/${name}`)));
   assert.ok(requests.every((r) => r.options.cache === "no-store"));
   assert.deepEqual(data.files.map((f) => f.name), ["pak0.pak", "pak1.pak", "pak2.pak"]);
   assert.deepEqual(data.maps, ["qev_encounter", "start"]);

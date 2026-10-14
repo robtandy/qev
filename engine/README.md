@@ -46,10 +46,15 @@ Only activity, boolean level confirmation and actual camera-changing tick counts
 The build adds all four modules without embedding assets.
 See [weapon/death awareness and provenance](../docs/weapon-and-death-awareness.md).
 
-This repository publishes integration source, not compiled engine releases or game
-assets. The build fetches the specified upstream source into ignored `build/qwasm/`,
-applies the patch, and compiles it locally. Distributing a compiled engine requires
-the corresponding source (upstream source, these modifications, and build scripts),
-applicable notices, and compliance with the licenses of any accompanying assets or
-model weights. Publishing these files does not grant rights to proprietary Quake
-assets or change the separate terms of Kevala, LibreQuake, or model weights.
+The Git repository contains integration source, not compiled engines or game assets.
+The build fetches the specified upstream source into ignored `build/qwasm/`, applies the patch,
+and compiles it. `build.json` also records a digest of the native integration/build inputs.
+The GitHub Pages workflow separately publishes the normal compiled engine, verified LibreQuake
+demo, notices, and downloadable corresponding source. `build:pages` rejects stale source digests,
+embedded-asset metadata, and evaluation exports. The engine source archive contains the modified
+C/header files used by the web build, the integration patch/modules/build scripts, and SDL2 source;
+it deliberately excludes upstream's unrelated EXEs, proprietary SDK libraries and QuakeWorld binaries.
+
+See [Pages distribution](../docs/pages-deployment.md). Redistribution still requires the relevant
+source and notices. Publishing these files does not grant rights to proprietary Quake assets or
+change the separate terms of Kevala, LibreQuake, or model weights.

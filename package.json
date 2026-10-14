@@ -10,6 +10,9 @@
     "setup:engine": "bash scripts/setup-toolchain.sh",
     "setup:demo": "node scripts/setup-demo.mjs",
     "build:engine": "node scripts/build-engine.mjs",
+    "build:pages": "node scripts/build-pages.mjs",
+    "preview:pages": "node scripts/serve-pages.mjs",
+    "test:pages": "node scripts/browser-pages.mjs",
     "check": "node scripts/check.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:gameplay": "node scripts/build-engine.mjs --evaluation && node scripts/browser-gameplay.mjs"

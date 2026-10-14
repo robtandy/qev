@@ -90,7 +90,7 @@ try {
     return !qev.engine && !qev.model && document.querySelector('#step').disabled && document.querySelector('#auto').disabled && document.querySelector('#map').disabled &&
       document.querySelector('#asset-status').textContent.includes('pak1.pak') &&
       document.querySelector('#asset-status').textContent.includes('npm run setup:demo') &&
-      document.querySelector('#retry-demo').getAttribute('href') === '/';
+      new URL(document.querySelector('#retry-demo').href).pathname === '/';
   `);
   await check("priorities can be changed before the engine or a model has loaded", `
     document.querySelector('[data-priority=get-supplies] [data-move=up]').click();

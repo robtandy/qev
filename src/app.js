@@ -10,6 +10,7 @@ import { AssistanceHelp } from "./assistance-help.js";
 import { DEMO, DEMO_MAPS } from "./demo-manifest.js";
 import { loadDemo } from "./demo.js";
 import { SAMPLING_METHOD } from "./sampling.js";
+import { appURL } from "./paths.js";
 
 const $ = (id) => document.getElementById(id);
 const pageTitle = document.title;
@@ -269,7 +270,7 @@ async function loadSelectedModel() {
   try {
     previous?.dispose();
     if (!["auto", "wasm"].includes(backend)) throw new Error("Choose Auto / GPU or CPU / WASM as the backend.");
-    const { Kevala } = await import("/vendor/kevala/index.js");
+    const { Kevala } = await import(appURL("vendor/kevala/index.js"));
     if (abort.signal.aborted) return;
     const loaded = await Kevala.load({
       model: name, backend, signal: abort.signal,

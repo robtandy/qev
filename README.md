@@ -2,6 +2,8 @@
 
 Local decision models playing Quake in the browser through [Qwasm](https://github.com/GMH-Code/Qwasm).
 
+**[Play Qev](https://robtandy.github.io/Qev/)** — choose a model, then Start or Step. Model inference runs on your device.
+
 ## Build and run
 
 Requires Node.js 22+, Python 3, Git, `make`, and `unzip`. Tested in Chrome.
@@ -22,8 +24,27 @@ keeping the model and settings. Gameplay has sound. The default is map 6 on Hard
 Hover or click **How it plays ?** for the control policy and perception limits.
 
 Setup downloads verified LibreQuake assets and the toolchain into ignored `build/`.
-No game files, weights, or compiled engine are published here. Models download only on selection
-and cache locally. After setup, just run `npm run serve`.
+The Git repository contains no game files, model weights, or compiled engine. The Pages site
+publishes the generated engine and verified free demo separately, with notices and corresponding
+source downloads. Models download only on selection and cache in your browser. After local setup,
+just run `npm run serve`.
+
+## GitHub Pages
+
+Pushes to `main` deploy **https://robtandy.github.io/Qev/** through GitHub Actions. The workflow
+runs tests, builds the normal engine, verifies the LibreQuake demo, assembles `build/site/`, and
+checks the actual `/Qev/` static layout in muted Chrome before uploading it. No evaluation engine,
+weights, local assets, captures, or logs are deployed. Every action is pinned to a commit.
+
+After the local setup above, preview the same artifact with:
+
+```sh
+npm run build:pages
+npm run preview:pages   # http://127.0.0.1:8092/Qev/
+```
+
+The **Licenses** link provides notices and downloadable GPL engine/gamecode source.
+See [deployment, asset boundaries and verification](docs/pages-deployment.md).
 
 ## How it works
 

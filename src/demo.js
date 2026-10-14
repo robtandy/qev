@@ -1,9 +1,10 @@
 import { DEMO, DEMO_SETUP_HELP } from "./demo-manifest.js";
 import { preparePaks } from "./pak.js";
+import { appURL } from "./paths.js";
 
 async function download(spec, { fetcher, signal, onProgress }) {
   let response;
-  try { response = await fetcher(`/demo/${spec.name}`, { signal, cache: "no-store" }); }
+  try { response = await fetcher(appURL(`demo/${spec.name}`), { signal, cache: "no-store" }); }
   catch (error) {
     if (signal?.aborted) throw error;
     throw new Error(`Could not load the LibreQuake demo (${spec.name}). ${DEMO_SETUP_HELP}`, { cause: error });
@@ -33,7 +34,7 @@ async function download(spec, { fetcher, signal, onProgress }) {
   return { name: spec.name, size: bytes.byteLength, arrayBuffer: async () => bytes.buffer };
 }
 
-/** Download only the pinned local-server bundle; no model or proprietary data is fetched. */
+/** Download only the pinned same-site bundle; no model or proprietary data is fetched. */
 export async function loadDemo({ signal, onProgress = () => {}, fetcher = fetch, manifest = DEMO } = {}) {
   const total = manifest.files.reduce((n, spec) => n + spec.size, 0);
   let completed = 0;

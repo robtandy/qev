@@ -138,7 +138,7 @@ test("the HTML keeps the card feed and compact controls without the old game pan
   assert.match(priorities, /id="priority-status"[^>]*role="status"/);
   assert.match(priorities, /id="reset-priorities"[^>]*disabled/);
   const masthead = html.match(/<header class="masthead">([\s\S]*?)<\/header>/)[1];
-  assert.match(masthead, /<img class="brand-logo" src="\/brand\/qev-logo\.svg" width="120" height="56" alt="QEV">/);
+  assert.match(masthead, /<img class="brand-logo" src="\.\/brand\/qev-logo\.svg" width="120" height="56" alt="QEV">/);
   assert.match(masthead, /<h1>quake played by a local decision model<\/h1>/);
   assert.match(html, /<title>QEV - quake played by a local decision model<\/title>/);
   assert.doesNotMatch(masthead, /class="mark"|qev-logo-bronze/);
