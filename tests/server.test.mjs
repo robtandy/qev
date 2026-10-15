@@ -10,7 +10,7 @@ test("public SVG branding is served with an image MIME type and matching GET/HEA
   const root = await mkdtemp(join(tmpdir(), "qev-brand-server-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "public/brand"), { recursive: true });
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><title>QEV</title></svg>';
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><title>qev</title></svg>';
   await writeFile(join(root, "public/brand/qev-logo.svg"), svg);
   const server = makeServer(root);
   await new Promise(r => server.listen(0, "127.0.0.1", r));
@@ -30,7 +30,7 @@ test("development server serves only explicit mounts, never user game assets or 
   const root = await mkdtemp(join(tmpdir(), "qev-server-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const dir of ["public", "src", "build/engine", "local-assets", "node_modules/kevala/js/src", DEMO_DIRECTORY]) await mkdir(join(root, dir), { recursive: true });
-  await writeFile(join(root, "public/index.html"), "Qev");
+  await writeFile(join(root, "public/index.html"), "qev");
   await writeFile(join(root, "public/PAK0.PAK"), "private-game-data");
   await writeFile(join(root, "build/engine/qwasm.wasm"), "wasm");
   await writeFile(join(root, "local-assets/pak0.pak"), "private-game-data");
@@ -42,7 +42,7 @@ test("development server serves only explicit mounts, never user game assets or 
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   t.after(() => new Promise((r) => server.close(r)));
   const url = `http://127.0.0.1:${server.address().port}`;
-  assert.equal(await (await fetch(url)).text(), "Qev");
+  assert.equal(await (await fetch(url)).text(), "qev");
   const wasm = await fetch(`${url}/engine/qwasm.wasm`);
   assert.equal(wasm.status, 200);
   assert.equal(wasm.headers.get("content-type"), "application/wasm");

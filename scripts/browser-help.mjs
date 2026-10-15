@@ -18,7 +18,7 @@ export async function checkHelp({ evaluate, check, call, until, onScreenshot = a
     const b=document.querySelector('#assistance-help-button');
     const r=b.getBoundingClientRect(), circle=b.querySelector('span');
     return !b.disabled && b.type==='button' && b.getAttribute('aria-haspopup')==='dialog' &&
-      b.getAttribute('aria-label')==='How Qev plays' && b.getAttribute('aria-expanded')==='false' &&
+      b.getAttribute('aria-label')==='How qev plays' && b.getAttribute('aria-expanded')==='false' &&
       !b.closest('label') && !document.querySelector('#assistance') &&
       r.width>=24 && r.height>=24 && circle.textContent==='?' && getComputedStyle(circle).borderRadius==='50%' &&
       document.querySelector('#reset').disabled && !qev.engine && !qev.model;

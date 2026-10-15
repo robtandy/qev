@@ -58,14 +58,16 @@ export async function checkRecenter({ evaluate, check, until, onView = async () 
         level.meleeApproachTicks===0 && level.player.shells===recenterTest.before.player.shells;
     `);
     await evaluate("recenterTest.reset()");
-    await check("explicit look-up preempts active recovery and is not immediately undone when its lease ends", `
+    await check("explicit look-up preempts active recovery while held, then returns to level after its lease ends", `
       const session=qev.engine.startAuto();qev.engine.applyLive(recenterTest.command({ref:recenterTest.target.ref}),session);
       await qev.engine.waitFor(s=>!s.actionTicksLeft);const before=qev.engine.snapshot();
       if(!before.viewRecovery.active)throw new Error('Fixture missed active recovery');
       if(!qev.engine.applyLive(recenterTest.command({pitchRate:-60}),session))throw new Error('Explicit look rejected');
-      await qev.engine.waitFor(s=>!s.actionTicksLeft);await new Promise(r=>setTimeout(r,150));
-      const after=qev.engine.snapshot();qev.pause();recenterTest.evidence.push({kind:'explicit-look',staging:recenterTest.staging,before,after});
-      return !after.viewRecovery.active && !after.viewRecovery.level && after.viewRecovery.ticks===before.viewRecovery.ticks;
+      await qev.engine.waitFor(s=>s.actionTicks>=3);const holding=qev.engine.snapshot();
+      await qev.engine.waitFor(s=>!s.actionTicksLeft&&s.viewRecovery.level&&!s.viewRecovery.active);
+      const after=qev.engine.snapshot();qev.pause();recenterTest.evidence.push({kind:'explicit-look',staging:recenterTest.staging,before,holding,after});
+      return holding.actionTicksLeft>0 && !holding.viewRecovery.active && holding.viewRecovery.ticks===before.viewRecovery.ticks &&
+        after.viewRecovery.level && !after.viewRecovery.active && after.viewRecovery.ticks>holding.viewRecovery.ticks && after.actionTicks===12;
     `);
     await evaluate("recenterTest.reset()");
     await check("Stop suspends view recovery immediately, and a new target preempts it rather than dipping toward the horizon", `

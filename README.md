@@ -1,16 +1,16 @@
-# Qev
+# qev
 
 Local decision models playing Quake in the browser through [Qwasm](https://github.com/GMH-Code/Qwasm).
 
-**[Play Qev](https://robtandy.github.io/Qev/)** — choose a model, then Start or Step. Model inference runs on your device.
+**[Play qev](https://robtandy.github.io/qev/)** — choose a model, then Start or Step. Model inference runs on your device.
 
 ## Build and run
 
 Requires Node.js 22+, Python 3, Git, `make`, and `unzip`. Tested in Chrome.
 
 ```sh
-git clone https://github.com/robtandy/Qev.git
-cd Qev
+git clone https://github.com/robtandy/qev.git
+cd qev
 npm ci --ignore-scripts
 npm run setup:engine
 npm run build:engine
@@ -31,16 +31,16 @@ just run `npm run serve`.
 
 ## GitHub Pages
 
-Pushes to `main` deploy **https://robtandy.github.io/Qev/** through GitHub Actions. The workflow
+Pushes to `main` deploy **https://robtandy.github.io/qev/** through GitHub Actions. The workflow
 runs tests, builds the normal engine, verifies the LibreQuake demo, assembles `build/site/`, and
-checks the actual `/Qev/` static layout in muted Chrome before uploading it. No evaluation engine,
+checks the actual `/qev/` static layout in muted Chrome before uploading it. No evaluation engine,
 weights, local assets, captures, or logs are deployed. Every action is pinned to a commit.
 
 After the local setup above, preview the same artifact with:
 
 ```sh
 npm run build:pages
-npm run preview:pages   # http://127.0.0.1:8092/Qev/
+npm run preview:pages   # http://127.0.0.1:8092/qev/
 ```
 
 The **Licenses** link provides notices and downloadable GPL engine/gamecode source.
@@ -52,7 +52,7 @@ The goal is **WIN**: defeat enemies and reach the exit alive, not camp indefinit
 There is one controller: HUD/inventory, renderer-labelled visible pixels and surfaces,
 stereo sound captions, scoreboard progress, unsuccessful own-movement feedback, and memory of
 actual observations—not GPS or hidden-world probes.
-The model scores explicit tactic and target/item/weapon questions. Qev samples each used
+The model scores explicit tactic and target/item/weapon questions. qev samples each used
 choice head's full probability distribution once, without temperature or top-k adjustments.
 Original SDK answers remain unchanged; draws and sampled selections are inspectable.
 Weapon selection accompanies
@@ -64,8 +64,8 @@ The prompt favors the best effective loaded gun, with the axe as a last resort. 
 stays on; this guidance is not a forced best-weapon picker. The explicit **Engage** action advances with
 the axe, while **Hold position and attack** remains stationary; no hidden range lookup or
 pathfinding is used. Visible death/corpse poses end aimed enemy attacks;
-downed zombies remain uncertain. Releasing pixel aim eases pitch back to level, without
-retargeting or adding movement/fire. Explicit look-up/down commands take priority, and Stop
+downed zombies remain uncertain. Releasing pixel aim or finishing an explicit look-up/down command
+eases pitch back to level, without retargeting or adding movement/fire. Active look commands take priority, and Stop
 freezes recovery too. See [weapon/death awareness](docs/weapon-and-death-awareness.md) and
 [sampling and view recovery](docs/sampling-and-view-recovery.md).
 

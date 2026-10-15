@@ -35,20 +35,20 @@ const sourceDate = new Date().toISOString().slice(0, 10);
 // GPL modified-file notices travel with both the compiled source and its archive.
 for (const file of patched) {
   const path = resolve(source, "WinQuake", file);
-  writeFileSync(path, `/* Modified for Qev (${sourceDate} build). See engine/qwasm.patch and engine/README.md in the Qev source distribution. */\n` + readFileSync(path, "utf8"));
+  writeFileSync(path, `/* Modified for qev (${sourceDate} build). See engine/qwasm.patch and engine/README.md in the qev source distribution. */\n` + readFileSync(path, "utf8"));
 }
 for (const file of ENGINE_MODULES) cpSync(resolve(root, "engine", file), resolve(source, "WinQuake", file));
 writeFileSync(resolve(source, "WinQuake/qev_animation_data.h"), animationHeader(JSON.parse(readFileSync(resolve(root, "engine/animation-labels.json"), "utf8"))));
 // No --preload-file: the verified LibreQuake demo is fetched separately in the browser.
 const flags = [
   "-O2", "-sUSE_SDL=2", "-sINITIAL_MEMORY=64MB", "-sSTACK_SIZE=2MB", "-sALLOW_MEMORY_GROWTH=1",
-  "-sMODULARIZE=1", "-sEXPORT_ES6=1", "-sEXPORT_NAME=createQevEngine", "-sENVIRONMENT=web",
+  "-sMODULARIZE=1", "-sEXPORT_ES6=1", "-sEXPORT_NAME=create_qev_engine", "-sENVIRONMENT=web",
   "-sFORCE_FILESYSTEM=1", "-sEXPORTED_FUNCTIONS=_main", "-sEXPORTED_RUNTIME_METHODS=FS,callMain,UTF8ToString,ccall",
   "-sINCOMING_MODULE_JS_API=canvas,noInitialRun,keyboardListeningElement,print,printErr,locateFile,onAbort",
   "-sEXIT_RUNTIME=0", "-lidbfs.js",
 ].join(" ");
 const makefile = readFileSync(resolve(source, "WinQuake/Makefile.emscripten"), "utf8")
-  .replace("OBJS := $(SRCS:.c=.o)", `SRCS += qev_bridge.c qev_pixels.c qev_animation.c qev_recenter.c\nqev_bridge.o qev_pixels.o qev_animation.o qev_recenter.o: CFLAGS += -fno-fast-math -Werror=implicit-function-declaration ${evaluation ? "-DQEV_EVALUATION" : ""}\nOBJS := $(SRCS:.c=.o)`);
+  .replace("OBJS := $(SRCS:.c=.o)", `SRCS += qev_bridge.c qev_pixels.c qev_animation.c qev_recenter.c\nqev_bridge.o qev_pixels.o qev_animation.o qev_recenter.o: CFLAGS += -fno-fast-math -Werror=implicit-function-declaration ${evaluation ? "-Dqev_EVALUATION" : ""}\nOBJS := $(SRCS:.c=.o)`);
 writeFileSync(resolve(source, "WinQuake/Makefile.qev"), makefile);
 run("bash", ["-c", 'source "$1/emsdk_env.sh" >/dev/null 2>&1; exec make -f Makefile.qev -j4 all "TARGET=$2/qwasm.mjs" "LDFLAGS=$3"', "qev-build", sdk, output, flags], resolve(source, "WinQuake"));
 cpSync(resolve(source, "gnu.txt"), resolve(output, "QWASM-LICENSE.txt"));

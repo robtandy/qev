@@ -128,7 +128,7 @@ test("native death completion uses only current visible animation and never swap
   const c = readFileSync(new URL("../engine/qev_bridge.c", import.meta.url), "utf8");
   const completion = c.slice(c.indexOf("static int fallen_contact"), c.indexOf("/* Called only for nonzero"));
   assert.match(completion, /view_available\(\)/); assert.match(completion, /objects\[i\]\.count/);
-  assert.match(completion, /Qev_FallenAnimation\(view_poses\[i\]\)/);
+  assert.match(completion, /qev_FallenAnimation\(view_poses\[i\]\)/);
   assert.doesNotMatch(completion, /EDICT_NUM|->v\.|health|deadflag|nextthink|origin|trace_ent/);
   assert.match(c, /attack && fallen_contact\(ref\)/);
   assert.match(c, /firing && fallen_contact\(selected_ref\)/);

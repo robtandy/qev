@@ -156,9 +156,9 @@ export async function checkPriorities({ evaluate, check, until, call, dragEvents
       try {document.querySelector('#export').click();}
       finally {URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}
     })()`);
-    await check("version-13 traces preserve priorities, original responses, replayable samples and concurrent equipment",  `
+    await check("version-14 traces preserve priorities, original responses, replayable samples and concurrent equipment",  `
       const trace=await priorityTest.exported, {objectivesFor}=await import('/src/objective.js');
-      return trace.version===13 && trace.samplingMethod==='categorical-v1' && trace.controlMode==='player-observable' && JSON.stringify(trace.priorityOrder)===JSON.stringify(qev.priorityOrder) &&
+      return trace.version===14 && trace.samplingMethod==='categorical-v1' && trace.controlMode==='player-observable' && JSON.stringify(trace.priorityOrder)===JSON.stringify(qev.priorityOrder) &&
         JSON.stringify(trace.objectives)===JSON.stringify(objectivesFor(qev.priorityOrder)) &&
         trace.records[0].priorityOrder[0]==='explore' && trace.records[0].requests[0].state===priorityTest.originalState &&
         trace.records.every(record=>record.priorityOrder.length===4 && record.objectives.length===4) &&

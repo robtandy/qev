@@ -1,4 +1,4 @@
-// Generate Qev's demo/QA encounter using LibreQuake v0.09-beta Lite geometry.
+// Generate qev's demo/QA encounter using LibreQuake v0.09-beta Lite geometry.
 // Requires the exact freely licensed archive and notices; no proprietary Quake resources.
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -33,5 +33,5 @@ directory.write("maps/qev_encounter.bsp"); directory.writeUInt32LE(12, 56); dire
 const output = resolve(process.argv[3] || "build/test-assets/encounter/pak2.pak");
 mkdirSync(dirname(output), { recursive: true });
 writeFileSync(output, Buffer.concat([header, bsp, directory]));
-writeFileSync(resolve(dirname(output), "README.txt"), "Local Qev QA overlay, derived from LibreQuake v0.09-beta Lite lq_e0m1.\nUse only with the original LibreQuake pak0.pak and pak1.pak.\nRetain the original archive's docs/COPYING, CREDITS and all other licensing notices.\nSources: https://github.com/lavenderdotpet/LibreQuake/tree/v0.09-beta\nThis overlay changes entity placement only: one player, one grunt, one health pickup.\nOriginal geometry, doors/triggers, and game rules remain; this is not a newly authored arena.\nOnly the hash-verified LibreQuake demo bundle may be served by Qev locally; PAKs are not committed to Git.\n");
+writeFileSync(resolve(dirname(output), "README.txt"), "Local qev QA overlay, derived from LibreQuake v0.09-beta Lite lq_e0m1.\nUse only with the original LibreQuake pak0.pak and pak1.pak.\nRetain the original archive's docs/COPYING, CREDITS and all other licensing notices.\nSources: https://github.com/lavenderdotpet/LibreQuake/tree/v0.09-beta\nThis overlay changes entity placement only: one player, one grunt, one health pickup.\nOriginal geometry, doors/triggers, and game rules remain; this is not a newly authored arena.\nOnly the hash-verified LibreQuake demo bundle may be served by qev locally; PAKs are not committed to Git.\n");
 console.log(`Created ${output}. Use with the matching LibreQuake pak0.pak and pak1.pak on map qev_encounter.`);

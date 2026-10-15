@@ -69,7 +69,7 @@ export async function buildPages(root) {
     const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
     const dirty = !!execFileSync("git", ["status", "--porcelain", "--untracked-files=normal"], { cwd: root, encoding: "utf8" }).trim();
     if (process.env.GITHUB_ACTIONS === "true" && dirty) throw new Error("CI must publish committed source, not a modified working tree.");
-    await writeFile(resolve(stage, "deployment.json"), JSON.stringify({ repository: "robtandy/Qev", commit, dirty, builtAt: new Date().toISOString(),
+    await writeFile(resolve(stage, "deployment.json"), JSON.stringify({ repository: "robtandy/qev", commit, dirty, builtAt: new Date().toISOString(),
       engine: build, demo: DEMO.id, kevala: vendor.version, sources: PAGE_SOURCES, files }, null, 2) + "\n");
     await rm(output, { recursive: true, force: true }); await rename(stage, output);
     console.log(`Pages artifact: ${output} (${(files.reduce((n, f) => n + f.bytes, 0) / 1024 / 1024).toFixed(1)} MiB, ${files.length} files). No model weights or evaluation export.`);

@@ -1,4 +1,4 @@
-name: Deploy Qev to GitHub Pages
+name: Deploy qev to GitHub Pages
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
         run: npm run setup:demo
       - name: Assemble static artifact and corresponding source
         run: npm run build:pages
-      - name: Test static /Qev/ deployment in muted Chrome
+      - name: Test static /qev/ deployment in muted Chrome
         env:
           CHROME_PATH: google-chrome
         run: npm run test:pages

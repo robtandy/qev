@@ -136,8 +136,10 @@ differed from SDK argmax. Every sampled option, interval, normalizer and resolve
 the untouched response and offer order; no dying/corpse aim bindings, unauthorized melee advance,
 resampling or controller/model errors were found. There were **17** native structural/visibility
 rejections and **6** late/stop/death discards; those were not replaced with alternate draws.
-World counters recorded **221** actual pitch-recovery ticks. Explicit model look-up/down choices
-still own their view and can leave it tilted; recovery does not undo those deliberate inputs.
+World counters recorded **221** actual pitch-recovery ticks. In that historical version, explicit
+model look-up/down choices retained their tilt indefinitely. The subsequent control-capability-7
+fix levels their pitch after release, without overriding active looks. These earlier trials have
+not been rerun or reclassified as results for the newer camera behavior.
 
 Functional validation: **347 tests**, **183 muted-browser checks**, and **64 JS syntax checks**.
 Native rendered fixtures show an elevated enemy, return to level, unchanged frozen-Step duration,

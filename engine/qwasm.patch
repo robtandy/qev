@@ -6,7 +6,7 @@ index b407ea2..96c9f57 100644
  
  int			in_impulse;
  
-+void Qev_ClearKeys(void)
++void qev_ClearKeys(void)
 +{
 +	kbutton_t *buttons[] = {&in_mlook, &in_klook, &in_left, &in_right, &in_forward,
 +		&in_back, &in_lookup, &in_lookdown, &in_moveleft, &in_moveright, &in_strafe,
@@ -17,7 +17,7 @@ index b407ea2..96c9f57 100644
 +	in_impulse = 0;
 +}
 +
-+void Qev_Buttons(int attack, int jump, int impulse)
++void qev_Buttons(int attack, int jump, int impulse)
 +{
 +	in_attack.state = attack ? 1 : 0;
 +	in_jump.state = jump ? 1 : 0;
@@ -40,9 +40,9 @@ index 5812143..a626d0d 100644
 -	
 -	// allow mice or other external controllers to add to the move
 -		IN_Move (&cmd);
-+		if (Qev_OwnsInput()) {
++		if (qev_OwnsInput()) {
 +			Q_memset(&cmd, 0, sizeof(cmd));
-+			Qev_ApplyInput(&cmd);
++			qev_ApplyInput(&cmd);
 +		} else {
 +			CL_BaseMove (&cmd);
 +			IN_Move (&cmd);
@@ -60,14 +60,14 @@ index 7a28816..b61fc24 100644
  */
 +/* Every opaque edge-solved span was painted by the surface rasterizer above.
 + * Record the same 2D coverage, including brush pickups; do not inspect its depth. */
-+static void Qev_LabelSurface(surf_t *s)
++static void qev_LabelSurface(surf_t *s)
 +{
 +	espan_t *span;
 +	if (!qev_pixel_capture) return;
-+	Qev_DrawSurface((s->flags & SURF_DRAWBACKGROUND) ? NULL : s->data,
++	qev_DrawSurface((s->flags & SURF_DRAWBACKGROUND) ? NULL : s->data,
 +		s->insubmodel ? s->entity : NULL);
 +	for (span = s->spans; span; span = span->pnext)
-+		Qev_PixelsSpan(d_viewbuffer + screenwidth * span->v + span->u, span->count);
++		qev_PixelsSpan(d_viewbuffer + screenwidth * span->v + span->u, span->count);
 +}
 +
  void D_DrawSurfaces (void)
@@ -77,7 +77,7 @@ index 7a28816..b61fc24 100644
  
  			D_DrawSolidSurface (s, (int)s->data & 0xFF);
  			D_DrawZSpans (s->spans);
-+			Qev_LabelSurface(s);
++			qev_LabelSurface(s);
  		}
  	}
  	else
@@ -85,7 +85,7 @@ index 7a28816..b61fc24 100644
  					R_TransformFrustum ();
  				}
  			}
-+			Qev_LabelSurface(s);
++			qev_LabelSurface(s);
  		}
  	}
  }
@@ -97,7 +97,7 @@ index 176b76b..148f3b2 100644
  			{
  				pz[0] = izi;
  				pdest[0] = pparticle->color;
-+				QEV_PIXEL(pdest);
++				qev_PIXEL(pdest);
  			}
  		}
  		break;
@@ -105,14 +105,14 @@ index 176b76b..148f3b2 100644
  			{
  				pz[0] = izi;
  				pdest[0] = pparticle->color;
-+				QEV_PIXEL(pdest);
++				qev_PIXEL(pdest);
  			}
  
  			if (pz[1] <= izi)
  			{
  				pz[1] = izi;
  				pdest[1] = pparticle->color;
-+				QEV_PIXEL(pdest + 1);
++				qev_PIXEL(pdest + 1);
  			}
  		}
  		break;
@@ -120,21 +120,21 @@ index 176b76b..148f3b2 100644
  			{
  				pz[0] = izi;
  				pdest[0] = pparticle->color;
-+				QEV_PIXEL(pdest);
++				qev_PIXEL(pdest);
  			}
  
  			if (pz[1] <= izi)
  			{
  				pz[1] = izi;
  				pdest[1] = pparticle->color;
-+				QEV_PIXEL(pdest + 1);
++				qev_PIXEL(pdest + 1);
  			}
  
  			if (pz[2] <= izi)
  			{
  				pz[2] = izi;
  				pdest[2] = pparticle->color;
-+				QEV_PIXEL(pdest + 2);
++				qev_PIXEL(pdest + 2);
  			}
  		}
  		break;
@@ -142,28 +142,28 @@ index 176b76b..148f3b2 100644
  			{
  				pz[0] = izi;
  				pdest[0] = pparticle->color;
-+				QEV_PIXEL(pdest);
++				qev_PIXEL(pdest);
  			}
  
  			if (pz[1] <= izi)
  			{
  				pz[1] = izi;
  				pdest[1] = pparticle->color;
-+				QEV_PIXEL(pdest + 1);
++				qev_PIXEL(pdest + 1);
  			}
  
  			if (pz[2] <= izi)
  			{
  				pz[2] = izi;
  				pdest[2] = pparticle->color;
-+				QEV_PIXEL(pdest + 2);
++				qev_PIXEL(pdest + 2);
  			}
  
  			if (pz[3] <= izi)
  			{
  				pz[3] = izi;
  				pdest[3] = pparticle->color;
-+				QEV_PIXEL(pdest + 3);
++				qev_PIXEL(pdest + 3);
  			}
  		}
  		break;
@@ -171,7 +171,7 @@ index 176b76b..148f3b2 100644
  				{
  					pz[i] = izi;
  					pdest[i] = pparticle->color;
-+					QEV_PIXEL(pdest + i);
++					qev_PIXEL(pdest + i);
  				}
  			}
  		}
@@ -183,7 +183,7 @@ index 9acd34b..c3f0fae 100644
  				pix = skintable[fv->v[3]>>16][fv->v[2]>>16];
  				pix = ((byte *)acolormap)[pix + (fv->v[4] & 0xFF00) ];
  				d_viewbuffer[d_scantable[fv->v[1]] + fv->v[0]] = pix;
-+				QEV_PIXEL(d_viewbuffer + d_scantable[fv->v[1]] + fv->v[0]);
++				qev_PIXEL(d_viewbuffer + d_scantable[fv->v[1]] + fv->v[0]);
  			}
  		}
  	}
@@ -191,7 +191,7 @@ index 9acd34b..c3f0fae 100644
  		*zbuf = z;
  		pix = d_pcolormap[skintable[new[3]>>16][new[2]>>16]];
  		d_viewbuffer[d_scantable[new[1]] + new[0]] = pix;
-+		QEV_PIXEL(d_viewbuffer + d_scantable[new[1]] + new[0]);
++		qev_PIXEL(d_viewbuffer + d_scantable[new[1]] + new[0]);
  	}
  
  nodraw:
@@ -199,7 +199,7 @@ index 9acd34b..c3f0fae 100644
  				if ((lzi >> 16) >= *lpz)
  				{
  					*lpdest = ((byte *)acolormap)[*lptex + (llight & 0xFF00)];
-+					QEV_PIXEL(lpdest);
++					qev_PIXEL(lpdest);
  // gel mapping					*lpdest = gelmap[*lpdest];
  					*lpz = lzi >> 16;
  				}
@@ -212,7 +212,7 @@ index 008c783..4234f41 100644
  	turb = intsintable + ((int)(cl.time*SPEED)&(CYCLE-1));
  	dest = vid.buffer + scr_vrect.y * vid.rowbytes + scr_vrect.x;
 +	if (qev_pixel_capture)
-+		Qev_PixelsWarpBegin(vid.buffer, vid.rowbytes, vid.width, vid.height,
++		qev_PixelsWarpBegin(vid.buffer, vid.rowbytes, vid.width, vid.height,
 +			scr_vrect.x, scr_vrect.y, scr_vrect.width, scr_vrect.height);
  
  	for (v=0 ; v<scr_vrect.height ; v++, dest += vid.rowbytes)
@@ -222,14 +222,14 @@ index 008c783..4234f41 100644
  			dest[u+2] = row[turb[u+2]][col[u+2]];
  			dest[u+3] = row[turb[u+3]][col[u+3]];
 +			if (qev_pixel_capture) {
-+				Qev_PixelsWarpCopy(dest + u+0, row[turb[u+0]] + col[u+0]);
-+				Qev_PixelsWarpCopy(dest + u+1, row[turb[u+1]] + col[u+1]);
-+				Qev_PixelsWarpCopy(dest + u+2, row[turb[u+2]] + col[u+2]);
-+				Qev_PixelsWarpCopy(dest + u+3, row[turb[u+3]] + col[u+3]);
++				qev_PixelsWarpCopy(dest + u+0, row[turb[u+0]] + col[u+0]);
++				qev_PixelsWarpCopy(dest + u+1, row[turb[u+1]] + col[u+1]);
++				qev_PixelsWarpCopy(dest + u+2, row[turb[u+2]] + col[u+2]);
++				qev_PixelsWarpCopy(dest + u+3, row[turb[u+3]] + col[u+3]);
 +			}
  		}
  	}
-+	Qev_PixelsWarpEnd();
++	qev_PixelsWarpEnd();
  }
  
  
@@ -241,7 +241,7 @@ index 2f02ad2..74c462f 100644
  					{
  						*pz = izi >> 16;
  						*pdest = btemp;
-+						QEV_PIXEL(pdest);
++						qev_PIXEL(pdest);
  					}
  				}
  
@@ -253,7 +253,7 @@ index f72ddc1..2844ae3 100644
  */
  void Host_ClearMemory (void)
  {
-+	Qev_WorldChanged();
++	qev_WorldChanged();
  	Con_DPrintf ("Clearing memory\n");
  	D_FlushCaches ();
  	Mod_ClearAll ();
@@ -261,7 +261,7 @@ index f72ddc1..2844ae3 100644
  	if (host_speeds.value)
  		time1 = Sys_FloatTime ();
  		
-+	Qev_PreRender();
++	qev_PreRender();
  	SCR_UpdateScreen ();
  
  	if (host_speeds.value)
@@ -282,7 +282,7 @@ index e3bd9fb..851964a 100644
  	}
  
 +	/* Cache descriptive annotations for exact known assets, not entity state. */
-+	Qev_AliasModel (mod, buffer, qev_model_bytes);
++	qev_AliasModel (mod, buffer, qev_model_bytes);
  	mod->type = mod_alias;
  
  // FIXME: do this right
@@ -294,7 +294,7 @@ index 9680bb7..b70b96e 100644
  */
  void ED_Free (edict_t *ed)
  {
-+	Qev_EntityFreed(ed);
++	qev_EntityFreed(ed);
  	SV_UnlinkEdict (ed);		// unlink from world bsp
  
  	ed->free = true;
@@ -319,7 +319,7 @@ index 220f309..48c2188 100644
  	for (i=0 ; i<cl_numvisedicts ; i++)
  	{
  		currententity = cl_visedicts[i];
-+		Qev_DrawEntity(currententity);
++		qev_DrawEntity(currententity);
  
  		if (currententity == &cl_entities[cl.viewentity])
  			continue;	// don't draw the player
@@ -327,7 +327,7 @@ index 220f309..48c2188 100644
  		r_time1 = Sys_FloatTime ();
  
  	R_SetupFrame ();
-+	Qev_BeginView(r_drawpolys || r_drawculledpolys || r_drawflat.value ||
++	qev_BeginView(r_drawpolys || r_drawculledpolys || r_drawflat.value ||
 +		r_timegraph.value || r_speeds.value || r_dspeeds.value || r_aliasstats.value);
  
  #ifdef PASSAGES
@@ -336,7 +336,7 @@ index 220f309..48c2188 100644
  		dv_time1 = de_time2;
  	}
  
-+	Qev_DrawEntity(NULL); /* The foreground weapon/effects erase any labels behind them. */
++	qev_DrawEntity(NULL); /* The foreground weapon/effects erase any labels behind them. */
  	R_DrawViewModel ();
  
  	if (r_dspeeds.value)
@@ -344,7 +344,7 @@ index 220f309..48c2188 100644
  
  	if (r_dowarp)
  		D_WarpScreen ();
-+	Qev_EndView();
++	qev_EndView();
  
  	V_SetContentsColor (r_viewleaf->contents);
  
@@ -369,7 +369,7 @@ index d31f6c9..1ee76fc 100644
 +		if (abs(rscale[data]) > qev_right) qev_right = abs(rscale[data]);
  	}
 -	
-+	Qev_AudibleSound(ch->sfx->name, qev_left, qev_right);
++	qev_AudibleSound(ch->sfx->name, qev_left, qev_right);
  	ch->pos += count;
  }
  
@@ -390,7 +390,7 @@ index d31f6c9..1ee76fc 100644
 +		if (abs(right) > qev_right) qev_right = abs(right);
  	}
 -
-+	Qev_AudibleSound(ch->sfx->name, qev_left, qev_right);
++	qev_AudibleSound(ch->sfx->name, qev_left, qev_right);
  	ch->pos += count;
  }
  
@@ -402,8 +402,8 @@ index 22d75f4..7522030 100644
          }
  #endif
  
-+        // Qev owns a fixed-tick clock, including full-world pause and bounded stepping.
-+        Qev_MainLoop();
++        // qev owns a fixed-tick clock, including full-world pause and bounded stepping.
++        qev_MainLoop();
 +        return;
 +
          // find time spent rendering last frame

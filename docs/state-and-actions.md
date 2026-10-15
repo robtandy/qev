@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Test a local model's **decisions**, not fine mouse/keyboard execution. Qev now has one
+Test a local model's **decisions**, not fine mouse/keyboard execution. qev now has one
 player-observable setup; the former assisted and raw-input modes are removed. Mechanical
 help is allowed, but it must not secretly become superior knowledge or a tactical policy.
 
@@ -122,9 +122,10 @@ Attack input is gated by visible aim-center overlap, not by a raycast or hit pre
 An aligned axe swing is not a ranged shot and does not establish melee contact. Movement remains
 relative to the current view, using normal run input subject to Quake's own speed limit.
 Pixel aiming turns at up to 720°/s; ordinary model-selected look inputs retain their bounds.
-When targeting ends, pitch eases back to level (180°/s, at most 30 ticks or 750 wall ms), without
-yaw changes, movement, attack or retargeting. A new pixel target preempts this; explicit
-look-up/down relinquishes automatic pitch ownership. Stop suspends cleanup. Frozen Step never
+When targeting or an explicit model look-up/down command ends, pitch eases back to level
+(180°/s, at most 30 ticks or 750 wall ms), without yaw changes, movement, attack or retargeting.
+A new pixel target or active explicit look preempts this; the view levels only after release.
+Stop suspends cleanup. Frozen Step never
 runs extra frames; subsequent ordinary actions can finish leveling. `viewRecovery` records
 activity, boolean level confirmation and cumulative camera-changing ticks—not angles/headings.
 `execution.viewRecoveryTicks` counts the change observed in that record's window, not action ticks.

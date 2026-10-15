@@ -132,14 +132,14 @@ try {
   `);
   assert.deepEqual(requests.filter((url) => /^https?:/.test(url) && !url.startsWith('http://127.0.0.1:8091/')), [], "automatic game startup makes no remote/model requests");
   await beginAudioChecks({ check });
-  await check("the steel QEV logo loads beside the exact tagline and survives SDL title initialization", `
+  await check("the steel qev logo loads beside the exact tagline and survives SDL title initialization", `
     const header=document.querySelector('.masthead'), logo=header.querySelector('.brand-logo');
     await logo.decode();
     const response=await fetch(logo.currentSrc,{method:'HEAD'});
-    return logo.alt==='QEV' && new URL(logo.currentSrc).pathname==='/brand/qev-logo.svg' &&
+    return logo.alt==='qev' && new URL(logo.currentSrc).pathname==='/brand/qev-logo.svg' &&
       logo.naturalWidth===1200 && logo.naturalHeight===560 && response.headers.get('content-type')==='image/svg+xml' &&
       header.querySelector('h1').textContent==='quake played by a local decision model' &&
-      document.title==='QEV - quake played by a local decision model' && !header.querySelector('.mark, .badge') &&
+      document.title==='qev - quake played by a local decision model' && !header.querySelector('.mark, .badge') &&
       !/kevala|Local experiment|software renderer/i.test(header.textContent);
   `);
   const checkBrandLayout=label=>check(label, `
@@ -154,7 +154,7 @@ try {
   await checkBrandLayout('the tagline stays to the right of the steel logo without overlapping project links');
   await check("the upper-right header links to the actual GitHub repo and reserves an X icon without a fake URL", `
     const links=document.querySelector('.header-links'), repo=links.querySelector('#repo-link'), post=links.querySelector('#x-post-link');
-    return repo.href==='https://github.com/robtandy/Qev' && repo.target==='_blank' && repo.relList.contains('noopener') &&
+    return repo.href==='https://github.com/robtandy/qev' && repo.target==='_blank' && repo.relList.contains('noopener') &&
       post.textContent==='𝕏' && post.getAttribute('aria-disabled')==='true' && !post.hasAttribute('href') &&
       links.getBoundingClientRect().left>document.querySelector('.brand').getBoundingClientRect().right;
   `);

@@ -1,6 +1,6 @@
 # GitHub Pages deployment
 
-Project site: **https://robtandy.github.io/Qev/**. `.github/workflows/pages.yml` deploys
+Project site: **https://robtandy.github.io/qev/**. `.github/workflows/pages.yml` deploys
 pushes to `main` and supports manual dispatch. Repository Pages settings use **GitHub Actions**,
 not a branch containing committed binaries. The `github-pages` environment records deployments.
 
@@ -17,7 +17,7 @@ npm run build:pages
 npm run preview:pages
 ```
 
-Open `http://127.0.0.1:8092/Qev/`. This preview serves **only** `build/site/`, not the development
+Open `http://127.0.0.1:8092/qev/`. This preview serves **only** `build/site/`, not the development
 server's dynamic source/vendor/demo mounts. It intentionally gives `/src/`, `/engine/` and `/demo/`
 at the domain root no aliases. `src/paths.js` resolves runtime assets against the application
 directory; HTML links are relative. Kevala's module workers/Wasm resolve alongside its copied
@@ -61,7 +61,7 @@ to a server or change the controller, physics, sampling, model limits, or known 
 The in-app **Licenses** link leads to `licenses.html` and same-site source downloads:
 
 - `sources/qev-engine.tar.gz`: the modified top-level C/header sources used by the web engine,
-  generated animation metadata, Makefiles, Qev native source/patch/input manifest/build scripts,
+  generated animation metadata, Makefiles, qev native source/patch/input manifest/build scripts,
   GNU notices, and SDL 2.30.9 source. Unrelated upstream Windows EXEs, proprietary SDK libraries,
   and QuakeWorld binaries are deliberately not included. The archive documents reproduction with
   the pinned toolchain; generally available build tools can be downloaded by its setup script.
@@ -71,8 +71,9 @@ The in-app **Licenses** link leads to `licenses.html` and same-site source downl
   `4d36d3cde335e539b73b9b60bab62e2c0b835f35`.
 - `sources/manifest.json`: exact engine/source provenance.
 
-The original demo notice is kept byte-for-byte, including its local-installer description; the
-Pages distribution additionally supplies these source downloads. Artwork/models/sounds/textures
+Upstream license and credit sections in the demo notice remain byte-for-byte. The lowercase
+branding follow-up updates only our provenance text and its pinned notice checksum (bundle v2);
+all three PAK checksums are unchanged. The Pages distribution additionally supplies these source downloads. Artwork/models/sounds/textures
 have BSD-style terms; gamecode/progs.dat/pop.lmp and the engine have GNU GPL terms. All applicable
 notices remain available. No proprietary Quake game data is included. This packaging does not
 change upstream licenses or model-weight terms.
@@ -83,15 +84,17 @@ change upstream licenses or model-weight terms.
 npm test
 npm run check
 npm run test:pages
-npm run test:pages -- --model
-npm run test:pages -- --url=https://robtandy.github.io/Qev/ --model --commit=FULL_COMMIT_SHA
+npm run test:pages -- --model --recenter
+npm run test:pages -- --url=https://robtandy.github.io/qev/ --model --commit=FULL_COMMIT_SHA
 ```
 
 Every browser harness launches and verifies Chrome's **`--mute-audio` before loading the app**;
 ordinary visitors retain normal gameplay sound. Set `CHROME_PATH` if Chrome is not at the platform
 default. The static test verifies project-path assets, normal engine capabilities, map 6/Hard startup
 stopped without model downloads, notices/source downloads, one exact native tick, no root-path leaks,
-and no JS exceptions. `--model` additionally loads real Laya in its worker and executes a sampled
+and no JS exceptions. It also checks native explicit look-up/down release, leveling, priority and
+Stop/frozen-Step limits. `--recenter` adds the elevated pixel-target recovery fixtures. `--model`
+additionally loads real Laya in its worker and executes a sampled
 frozen Step using the published inventory-aware requests. Test reports/captures stay in ignored
 `build/pages-*` files; they are not uploaded.
 

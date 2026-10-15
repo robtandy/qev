@@ -1,4 +1,4 @@
-// Static /Qev/ smoke test; --url tests the deployed site, --model adds real Laya.
+// Static /qev/ smoke test; --url tests the deployed site, --model adds real Laya.
 // Browser --mute-audio is verified BEFORE loading any application page.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -6,13 +6,15 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makePagesServer } from "./serve-pages.mjs";
+import { checkLookRecovery } from "./browser-look-recovery.mjs";
+import { checkRecenter } from "./browser-recenter.mjs";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const options = Object.fromEntries(process.argv.slice(2).map(arg => {
-  const match = /^--(url|model|commit)(?:=(.*))?$/.exec(arg);
-  if (!match) throw new Error("Usage: browser-pages.mjs [--url=https://owner.github.io/Qev/] [--model] [--commit=sha]");
+  const match = /^--(url|model|commit|recenter)(?:=(.*))?$/.exec(arg);
+  if (!match) throw new Error("Usage: browser-pages.mjs [--url=https://owner.github.io/qev/] [--model] [--recenter] [--commit=sha]");
   return [match[1], match[2] ?? true];
 }));
-const url = new URL(options.url || "http://127.0.0.1:8092/Qev/");
+const url = new URL(options.url || "http://127.0.0.1:8092/qev/");
 if (!["http:", "https:"].includes(url.protocol) || !url.pathname.endsWith("/") || url.search || url.hash) throw new Error("Provide the app's http(s) URL with a trailing slash.");
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function until(fn, timeout = 60000) {
@@ -60,11 +62,14 @@ try {
   assert.equal(await evaluate("!!qev.engine"), true, await evaluate("document.querySelector('#error').textContent"));
   const info = await evaluate(`(async()=>{const meta=await(await fetch(new URL('deployment.json',location.href))).json(),s=qev.engine.snapshot();
     return {meta,snapshot:s,model:!!qev.model,logo:document.querySelector('.brand-logo').currentSrc,
+      title:document.title,logoLabel:document.querySelector('.brand-logo').alt,repo:document.querySelector('#repo-link').href,
       css:[...document.styleSheets].some(s=>s.href?.endsWith('/style.css')),
       normal:typeof qev.engine.module._qev_evaluation==='undefined',control:qev.engine.module._qev_control_version(),screen:qev.engine.module._qev_screen_version()};})()`);
   assert.equal(info.snapshot.ready, true); assert.equal(info.snapshot.paused, true); assert.equal(info.snapshot.map, "lq_e0m6"); assert.equal(info.snapshot.difficulty, 2);
-  assert.equal(info.normal, true); assert.equal(info.control, 6); assert.equal(info.screen, 3); assert.equal(info.model, false); assert.equal(info.css, true);
+  assert.equal(info.normal, true); assert.equal(info.control, 7); assert.equal(info.screen, 3); assert.equal(info.model, false); assert.equal(info.css, true);
   assert.equal(new URL(info.logo).pathname, url.pathname + "brand/qev-logo.svg");
+  assert.equal(info.title, "qev - quake played by a local decision model"); assert.equal(info.logoLabel, "qev");
+  assert.equal(info.repo, "https://github.com/robtandy/qev"); assert.equal(info.meta.repository, "robtandy/qev");
   const expected = options.commit || process.env.GITHUB_SHA;
   if (expected) assert.equal(info.meta.commit, expected);
   if (options.url) assert.equal(info.meta.dirty, false, "Publish committed source, not a modified working tree");
@@ -78,6 +83,11 @@ try {
   console.log("PASS license notices and corresponding-source downloads at the project path");
   assert.equal(await evaluate("(async()=>{const s=qev.engine.snapshot();await qev.engine.frame();const a=qev.engine.snapshot();return a.paused&&a.tick===s.tick+1})()"), true);
   console.log("PASS native engine advances exactly one requested tick and pauses");
+  let targetRecovery = null;
+  if (options.recenter) targetRecovery = await checkRecenter({ evaluate, until, check: async (name, body) => {
+    assert.equal(await evaluate(`(async()=>{${body}})()`), true, name); console.log("PASS", name);
+  } });
+  const lookRecovery = await checkLookRecovery({ evaluate });
   let decision = null, model = null;
   if (options.model) {
     await evaluate("document.querySelector('#model').value='laya';document.querySelector('#model').dispatchEvent(new Event('change',{bubbles:true}))");
@@ -102,7 +112,7 @@ try {
   }
   const outside = requests.filter(r => { const v = new URL(r); return v.origin === url.origin && !v.pathname.startsWith(url.pathname); });
   assert.deepEqual(outside, [], "No domain-root asset leaks"); assert.deepEqual(errors, []);
-  await writeFile(resolve(root, `build/pages-${options.url ? "live" : "local"}.json`), JSON.stringify({ url: url.href, commit: info.meta.commit, model, decision, requests, errors }, null, 2));
+  await writeFile(resolve(root, `build/pages-${options.url ? "live" : "local"}.json`), JSON.stringify({ url: url.href, commit: info.meta.commit, model, decision, targetRecovery, lookRecovery, requests, errors }, null, 2));
   const screenshot = await call("Page.captureScreenshot", { format: "png" });
   await writeFile(resolve(root, `build/pages-${options.url ? "live" : "local"}.png`), Buffer.from(screenshot.data, "base64"));
   console.log(`PASS static-site verification complete: ${url.href} (${info.meta.commit})`);

@@ -57,7 +57,7 @@ test("test-only movement measurements never enter model observations, choices or
   }
   const build = readFileSync(new URL("../scripts/build-engine.mjs", import.meta.url), "utf8");
   assert.match(build, /evaluation \? "build\/engine-evaluation" : "build\/engine"/);
-  assert.match(build, /evaluation \? "-DQEV_EVALUATION" : ""/);
+  assert.match(build, /evaluation \? "-Dqev_EVALUATION" : ""/);
 });
 
 test("projectiles are visual danger evidence, not invented shootable enemies", () => {
@@ -77,7 +77,7 @@ test("weapon facts expose empty ammunition without removing a choice or picking 
 
 test("native input uses ordinary run limits and cannot deadlock fire waiting for a refused switch", () => {
   const c = readFileSync(new URL("../engine/qev_bridge.c", import.meta.url), "utf8");
-  assert.match(c, /#define QEV_SPEED 400\.0f/); assert.match(c, /#define QEV_AIM_TURN 720\.0f/);
+  assert.match(c, /#define qev_SPEED 400\.0f/); assert.match(c, /#define qev_AIM_TURN 720\.0f/);
   assert.match(c, /if \(impulse\) fire = 0/); assert.doesNotMatch(c, /if \(needs_weapon\) fire = 0/);
   assert.match(c, /int impulse = action_ticks == 0 && needs_weapon/);
   assert.doesNotMatch(c, /sv_maxspeed\.value\s*=/);

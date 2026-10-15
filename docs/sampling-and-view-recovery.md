@@ -47,7 +47,7 @@ There is no automatic format fallback or production argmax selector.
 
 ### Inspect and reproduce a selection
 
-Trace version **13** records `samplingMethod: "categorical-v1"`. Each scored record has
+Trace version **14** records `samplingMethod: "categorical-v1"`. Each scored record has
 `sampling.complete` and `sampling.heads`, with these fields for every used choice head:
 
 - `question`, `responseIndex`, and `options` in their original offer order;
@@ -72,13 +72,16 @@ fixed draws: Engage is sampled instead of the SDK's top back-fire. It is not cap
 Lifecycle/native fixtures use one-hot mock distributions; nontrivial distributions, boundaries,
 rounded ties, tiny tails, invalid RNG values and non-argmax execution have separate tests.
 
-## Return pitch to level after pixel aiming
+## Return pitch to level after aiming or an explicit look
 
-The previous pixel servo wrote `cl.viewangles[PITCH]`, but release only cleared the held keys.
+The original pixel servo wrote `cl.viewangles[PITCH]`, but release only cleared the held keys.
 Aiming at an elevated enemy therefore left the player looking up during later ordinary actions.
+The first recovery implementation fixed pixel aiming but deliberately forgot automatic pitch
+ownership for explicit look-up/down commands. That left model looks tilted indefinitely too.
+The follow-up fix retains their priority while active and adds bounded leveling after release.
 
 `engine/qev_recenter.c/h` is a small camera-ownership state machine with no engine/entity/world
-access. After pixel-guided targeting ends (including item aiming), it returns **pitch** toward
+access. After pixel-guided targeting (including item aiming) or explicit model pitch input ends, it returns **pitch** toward
 zero, at up to **180°/game second**. One cleanup is bounded by **30 simulation ticks or 750 wall
 milliseconds**, whichever is reached first. This is own-camera assistance, not a distance,
 horizon-image, LOS or route query. It changes neither yaw nor movement, attack, jump or equipment.
@@ -88,8 +91,10 @@ horizon-image, LOS or route query. It changes neither yaw nor movement, attack, 
 - An accepted ordinary move, turn, raw attack or wait can finish pitch recovery from previous
   targeting. It does not choose where to walk or whom to attack.
 - A new pixel target takes priority immediately, with no intervening pitch reset.
-- Explicit look-up/down commands cancel automatic pitch ownership; their deliberate view is not
-  immediately undone. A later pixel-aiming command can take ownership again.
+- Explicit look-up/down commands preempt cleanup while active. An actually executed pitch tick
+  owes later leveling, just like a pixel-aim tick; accepting a command without executing it does
+  not acquire ownership. Expiry, replacement or a later ordinary command releases that view.
+  Repeated active look commands still take priority; cleanup never reverses a held look.
 - Stop suspends recovery without moving the frozen view. A frozen Step never runs extra frames:
   its subsequent ordinary action can finish leveling. Neutral maintenance frames do not arm it.
 - Manual play, death, completion, teleport and world changes do not inherit active camera cleanup.
@@ -103,8 +108,8 @@ counter change in that record's window, **not extra action ticks, movement or hi
 may finish before all idle cleanup does; later snapshots retain the cumulative count. World
 changes/absent counters abstain rather than inventing a cross-epoch execution delta.
 
-The normal engine now requires screen capability **3**, control capability **6**. Snapshot
-schema remains **4**; trace export is **13**. Rebuild the engine and reload the app/reselect the
+The normal engine now requires screen capability **3**, control capability **7**. Snapshot
+schema remains **4**; trace export is **14**. Rebuild the engine and reload the app/reselect the
 model so old code cannot silently retain the earlier behavior.
 
 ## Validation boundary
@@ -120,6 +125,9 @@ model so old code cannot silently retain the earlier behavior.
 - `scripts/browser-recenter.mjs`: actual elevated visible enemy, image-space aiming, frozen
   Step accounting, live expiry recovery, explicit look and new-target priority, and Stop.
   Screenshots and evidence stay under ignored `build/recenter-*`.
+- `scripts/browser-look-recovery.mjs`, run by the static Pages smoke test: real native look-down
+  and look-up expiry, no cleanup during an active look, look preemption, stopped/frozen Step
+  invariants and subsequent leveling. These are explicitly labeled fixtures, not model gameplay.
 - The existing muted-browser model checks retain per-head token budgets and canaries. Gameplay
   tests still use real models, Hard map 6, normal physics/weapons, 1× speed and disabled respawns.
 

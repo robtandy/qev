@@ -57,10 +57,10 @@ test("the annotation lookup cannot access entities or mutate game assets/physics
   const lookup = readFileSync(resolve(root, "engine/qev_animation.c"), "utf8");
   assert.doesNotMatch(lookup, /#include "quakedef|EDICT_NUM|->v\.|SV_Move|cl_entities|nextthink\s*[=();]/);
   const bridge = readFileSync(resolve(root, "engine/qev_bridge.c"), "utf8");
-  const renderPose = bridge.slice(bridge.indexOf("void Qev_AliasModel"), bridge.indexOf("static const char *entity_kind"));
+  const renderPose = bridge.slice(bridge.indexOf("void qev_AliasModel"), bridge.indexOf("static const char *entity_kind"));
   assert.doesNotMatch(renderPose, /EDICT_NUM|->v\.|deadflag|health\s*[<>=]|->frame\s*=/);
-  assert.match(renderPose, /Qev_AnimationModel\(bytes, \(size_t\)length, asset->numframes\)/);
-  assert.match(renderPose, /Qev_AnimationPose\(animation_assets\[i\]\.labels, entity->frame\)/);
+  assert.match(renderPose, /qev_AnimationModel\(bytes, \(size_t\)length, asset->numframes\)/);
+  assert.match(renderPose, /qev_AnimationPose\(animation_assets\[i\]\.labels, entity->frame\)/);
 });
 
 // When the separately installed demo is present, audit ALL real MDLs through the

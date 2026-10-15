@@ -31,7 +31,7 @@ test("the pixel reducer has no world/depth dependency and the only controller ha
   assert.match(bridge, /o->at_aim/);
   const pixelsJSON = bridge.slice(bridge.indexOf("static void screen_objects_json"), bridge.indexOf("EMSCRIPTEN_KEEPALIVE const char *qev_snapshot"));
   assert.doesNotMatch(pixelsJSON, /center\(|visible\(|length3|SV_Move|viewangles|d_pzbuffer|bearingRight|\\"distance\\"/);
-  const soundHook = bridge.slice(bridge.indexOf("void Qev_AudibleSound"), bridge.indexOf("static void clear_action"));
+  const soundHook = bridge.slice(bridge.indexOf("void qev_AudibleSound"), bridge.indexOf("static void clear_action"));
   assert.doesNotMatch(soundHook, /origin|EDICT_NUM|entnum|viewangles|SV_|channel_t/);
   assert.match(soundHook, /left < 48 && right < 48/);
 });

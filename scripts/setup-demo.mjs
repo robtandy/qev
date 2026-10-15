@@ -47,5 +47,5 @@ try {
   await rm(output, { recursive: true, force: true }); // Only the generated, versioned demo directory.
   await rename(id1, output);
   console.log(`Installed the verified LibreQuake demo and notices: ${output}`);
-  console.log("Qev will load its three matching PAKs automatically. No original Quake assets are hosted.");
+  console.log("qev will load its three matching PAKs automatically. No original Quake assets are hosted.");
 } finally { await rm(temporary, { recursive: true, force: true }); }

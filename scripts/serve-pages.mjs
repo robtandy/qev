@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const types = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8", ".json": "application/json", ".wasm": "application/wasm", ".svg": "image/svg+xml", ".txt": "text/plain; charset=utf-8", ".gz": "application/gzip" };
-export function makePagesServer(directory = resolve(root, "build/site"), { basePath = "/Qev/" } = {}) {
+export function makePagesServer(directory = resolve(root, "build/site"), { basePath = "/qev/" } = {}) {
   if (!/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(basePath)) throw new Error("Expected a /project/ base path.");
   return createServer(async (req, res) => {
     try {
@@ -30,5 +30,5 @@ export function makePagesServer(directory = resolve(root, "build/site"), { baseP
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT || 8092);
-  makePagesServer().listen(port, "127.0.0.1", () => console.log(`Pages preview: http://127.0.0.1:${port}/Qev/ (npm run build:pages first)`));
+  makePagesServer().listen(port, "127.0.0.1", () => console.log(`Pages preview: http://127.0.0.1:${port}/qev/ (npm run build:pages first)`));
 }

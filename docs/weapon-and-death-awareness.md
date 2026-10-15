@@ -151,7 +151,7 @@ A held targeted attack ends with `Chosen enemy is visibly dead or dying.` when t
 becomes visible. The whole command releases; no other enemy is substituted. A response scored
 while the target appeared alive is rejected if the current rendered pose has since fallen.
 Loss of pixels still means loss of visibility, **not** knowledge of an unseen death.
-Released pixel aiming now has bounded pitch-only recovery toward level, so the view does not
+Released pixel aiming and finished explicit look-up/down commands have bounded pitch-only recovery toward level, so the view does not
 stay tilted toward a former target. This never retains fire/movement or selects another enemy.
 
 Observation memory includes the visible pose, so standing-to-corpse is not an unchanged view.
@@ -184,5 +184,5 @@ level progress only: they do not prove that this target died or attribute every 
   input/renderer fixture, not a model-controlled pickup or a skill benchmark.
 
 All browser checks launch and verify `--mute-audio` before the app loads. Normal gameplay still
-supports sound. The normal engine requires screen capability **3**, control capability **6**;
-exported traces are version **13**. Reload the app after rebuilding the engine.
+supports sound. The normal engine requires screen capability **3**, control capability **7**;
+exported traces are version **14**. Reload the app after rebuilding the engine.

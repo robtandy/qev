@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Qev's single player-observable controller. No game data is embedded.
+ * qev's single player-observable controller. No game data is embedded.
  * Labels are renderer/mixer-assisted, NOT RGB/audio recognition. No route/LOS
  * probes, enemy coordinates, health, AI goals, or hidden target tracking.
  */
@@ -12,14 +12,14 @@
 #include <SDL.h>
 #include <ctype.h>
 
-#define QEV_DT (1.0 / 60.0)
+#define qev_DT (1.0 / 60.0)
 /* Normal Quake run input; SV_MaxSpeed still clamps movement normally. */
-#define QEV_SPEED 400.0f
-#define QEV_TURN 180.0f
-#define QEV_AIM_TURN 720.0f
-#define QEV_MAX_SEEN 6
-#define QEV_LIVE_TICKS 45
-#define QEV_MAX_AGE 60
+#define qev_SPEED 400.0f
+#define qev_TURN 180.0f
+#define qev_AIM_TURN 720.0f
+#define qev_MAX_SEEN 6
+#define qev_LIVE_TICKS 45
+#define qev_MAX_AGE 60
 static int epoch = 1, tick = 0, paused = 1, owned = 1, booting = 1;
 static int remaining, lease, selected_ref, firing, jumping, selected_weapon, melee_approach;
 static int control_session, action_serial, action_ticks, weapon_presses, melee_approach_ticks;
@@ -42,7 +42,7 @@ static int audio_access;
 typedef struct { const char *kind; int direction, loudness, tick; } heard_t;
 static heard_t heard[8];
 static int heard_count;
-#ifdef QEV_EVALUATION
+#ifdef qev_EVALUATION
 /* Test-build only. Aggregate movement evidence is never part of qev_snapshot,
  * model requests, candidate construction or execution. No coordinates exported. */
 static double eval_distance, eval_displacement;
@@ -52,7 +52,7 @@ static vec3_t eval_anchor;
 extern float scr_centertime_off;
 extern qboolean sb_showscores, scr_drawloading, scr_drawdialog;
 extern cvar_t lcd_x;
-_Static_assert(MAX_EDICTS < QEV_SURFACE_FIRST, "Entity and surface pixel tags must not overlap");
+_Static_assert(MAX_EDICTS < qev_SURFACE_FIRST, "Entity and surface pixel tags must not overlap");
 
 static int ready(void) {
     return host_initialized && sv.active && svs.maxclients == 1 && cls.state == ca_connected &&
@@ -100,13 +100,13 @@ static const int weapons[] = {IT_AXE, IT_SHOTGUN, IT_SUPER_SHOTGUN, IT_NAILGUN, 
  * Keep it across levels: alias assets may remain cached without another load. */
 static struct { model_t *asset; const qev_animation_model_t *labels; } animation_assets[256];
 static int animation_asset_count;
-void Qev_AliasModel(model_t *asset, const void *bytes, int length) {
+void qev_AliasModel(model_t *asset, const void *bytes, int length) {
     int slot = 0;
     while (slot < animation_asset_count && animation_assets[slot].asset != asset) slot++;
     if (slot == 256) return;
     if (slot == animation_asset_count) animation_asset_count++;
     animation_assets[slot].asset = asset;
-    animation_assets[slot].labels = length > 0 ? Qev_AnimationModel(bytes, (size_t)length, asset->numframes) : NULL;
+    animation_assets[slot].labels = length > 0 ? qev_AnimationModel(bytes, (size_t)length, asset->numframes) : NULL;
 }
 /* Animation labels describe the CURRENT rendered pose, never the server's next
  * attack, cooldown, enemy health or intent. Known assets have fingerprinted
@@ -119,8 +119,8 @@ static const char *pose(entity_t *entity) {
      * drawn now. Never use it to claim that the current appearance is a corpse. */
     if (header->frames[entity->frame].type != ALIAS_SINGLE) return "unknown";
     for (int i = 0; i < animation_asset_count; i++) if (animation_assets[i].asset == entity->model && animation_assets[i].labels)
-        return Qev_AnimationPose(animation_assets[i].labels, entity->frame);
-    return Qev_NamedAnimation(header->frames[entity->frame].name);
+        return qev_AnimationPose(animation_assets[i].labels, entity->frame);
+    return qev_NamedAnimation(header->frames[entity->frame].name);
 }
 static const char *entity_kind(edict_t *e, int *group) {
     const char *name = pr_strings + e->v.classname;
@@ -138,18 +138,18 @@ static const char *entity_kind(edict_t *e, int *group) {
     return NULL;
 }
 static int view_available(void) {
-    return Qev_PixelsView()->valid && view_tick == tick && key_dest == key_game && !cl.intermission &&
+    return qev_PixelsView()->valid && view_tick == tick && key_dest == key_game && !cl.intermission &&
         scr_con_current <= 0 && scr_centertime_off <= 0 && !sb_showscores && !cl.paused && !scr_drawloading && !scr_drawdialog;
 }
 EMSCRIPTEN_KEEPALIVE int qev_screen_version(void) { return 3; }
-EMSCRIPTEN_KEEPALIVE int qev_control_version(void) { return 6; }
+EMSCRIPTEN_KEEPALIVE int qev_control_version(void) { return 7; }
 EMSCRIPTEN_KEEPALIVE void qev_audio_access(int enabled) { audio_access = enabled == 1; }
-void Qev_BeginView(int unsupported) {
-    Qev_PixelsReset(); view_tick = -1;
+void qev_BeginView(int unsupported) {
+    qev_PixelsReset(); view_tick = -1;
     memset(view_known, 0, sizeof(view_known)); memset(view_kinds, 0, sizeof(view_kinds));
     if (!ready() || cl.intermission) { view_reason = "No active player view"; goto unavailable; }
     if (unsupported || lcd_x.value) { view_reason = "Unsupported debug render"; goto unavailable; }
-    if (!Qev_PixelsBegin(d_viewbuffer, screenwidth, r_dowarp ? WARP_WIDTH : vid.width,
+    if (!qev_PixelsBegin(d_viewbuffer, screenwidth, r_dowarp ? WARP_WIDTH : vid.width,
         r_dowarp ? WARP_HEIGHT : vid.height, r_refdef.vrect.x, r_refdef.vrect.y,
         r_refdef.vrect.width, r_refdef.vrect.height)) { view_reason = "Invalid pixel buffer"; goto unavailable; }
     view_reason = NULL; return;
@@ -159,11 +159,11 @@ unavailable:
 /* Engine kind labels are a disclosed concession. Only the rendered model is
  * classified, then FINAL pixels decide whether any label/reference is observable.
  * No corpse filtering from server health/deadflag, no server animation/position. */
-void Qev_DrawEntity(entity_t *entity) {
+void qev_DrawEntity(entity_t *entity) {
     uintptr_t address = (uintptr_t)entity, base = (uintptr_t)cl_entities;
     int slot, group;
     edict_t *e;
-    Qev_PixelsTag(0);
+    qev_PixelsTag(0);
     if (!qev_pixel_capture || address < base || address - base >= sizeof(cl_entities) || (address - base) % sizeof(*cl_entities)) return;
     slot = (int)((address - base) / sizeof(*cl_entities));
     if (slot <= 1 || slot >= sv.num_edicts) return;
@@ -173,33 +173,33 @@ void Qev_DrawEntity(entity_t *entity) {
             view_kinds[slot] = entity_kind(e, &group); view_groups[slot] = group; view_poses[slot] = pose(entity);
         }
     }
-    if (view_kinds[slot]) Qev_PixelsTag(slot);
+    if (view_kinds[slot]) qev_PixelsTag(slot);
 }
-void Qev_DrawSurface(msurface_t *surface, entity_t *entity) {
+void qev_DrawSurface(msurface_t *surface, entity_t *entity) {
     int kind;
     const char *texture;
-    Qev_DrawEntity(entity);
+    qev_DrawEntity(entity);
     if (!qev_pixel_capture || !surface) return;
     /* Retain a visible brush object's label rather than overwriting it as a wall. */
     if (entity && entity != &cl_entities[0]) {
         uintptr_t a = (uintptr_t)entity, b = (uintptr_t)cl_entities;
         if (a >= b && a-b < sizeof(cl_entities) && (a-b)%sizeof(*cl_entities)==0 && view_kinds[(a-b)/sizeof(*cl_entities)]) return;
     }
-    if (surface->flags & SURF_DRAWSKY) kind = QEV_SKY;
+    if (surface->flags & SURF_DRAWSKY) kind = qev_SKY;
     else if (surface->flags & SURF_DRAWTURB) {
         texture = surface->texinfo->texture->name;
-        kind = strstr(texture, "lava") ? QEV_LAVA : strstr(texture, "slime") ? QEV_SLIME : QEV_WATER;
+        kind = strstr(texture, "lava") ? qev_LAVA : strstr(texture, "slime") ? qev_SLIME : qev_WATER;
     } else {
         /* Descriptive surface orientation, NOT a collision/traversability test. */
         float up = surface->plane->normal[2] * ((surface->flags & SURF_PLANEBACK) ? -1 : 1);
-        kind = up > 0.95f ? QEV_FLOOR : up < -0.95f ? QEV_CEILING : fabsf(up) < 0.1f ? QEV_WALL : QEV_SLOPE;
+        kind = up > 0.95f ? qev_FLOOR : up < -0.95f ? qev_CEILING : fabsf(up) < 0.1f ? qev_WALL : qev_SLOPE;
     }
-    Qev_PixelsTag(QEV_SURFACE_FIRST + kind);
+    qev_PixelsTag(qev_SURFACE_FIRST + kind);
 }
-void Qev_EndView(void) {
+void qev_EndView(void) {
     if (!qev_pixel_capture) return;
-    Qev_PixelsEnd();
-    const qev_pixel_view_t *v = Qev_PixelsView();
+    qev_PixelsEnd();
+    const qev_pixel_view_t *v = qev_PixelsView();
     if (v->valid) {
         view_tick = tick + 1; view_frame++;
         int covered = key_dest != key_game || scr_con_current > 0 || scr_centertime_off > 0 || sb_showscores || cl.paused || scr_drawloading || scr_drawdialog;
@@ -211,12 +211,12 @@ void Qev_EndView(void) {
 }
 static const qev_pixel_object_t *contact(int ref) {
     if (ref <= 0 || !view_available()) return NULL;
-    for (int i = 2; i < MAX_EDICTS; i++) if (view_refs[i] == ref && Qev_PixelsView()->objects[i].count) return &Qev_PixelsView()->objects[i];
+    for (int i = 2; i < MAX_EDICTS; i++) if (view_refs[i] == ref && qev_PixelsView()->objects[i].count) return &qev_PixelsView()->objects[i];
     return NULL;
 }
 static int enemy_contact(int ref) {
     if (ref <= 0 || !view_available()) return 0;
-    for (int i = 2; i < MAX_EDICTS; i++) if (view_refs[i] == ref && Qev_PixelsView()->objects[i].count)
+    for (int i = 2; i < MAX_EDICTS; i++) if (view_refs[i] == ref && qev_PixelsView()->objects[i].count)
         return view_groups[i] == 1;
     return 0;
 }
@@ -224,14 +224,14 @@ static int enemy_contact(int ref) {
  * This is not a server deadflag/health test and never substitutes another target. */
 static int fallen_contact(int ref) {
     if (ref <= 0 || !view_available()) return 0;
-    for (int i = 2; i < MAX_EDICTS; i++) if (view_refs[i] == ref && Qev_PixelsView()->objects[i].count)
-        return view_groups[i] == 1 && Qev_FallenAnimation(view_poses[i]);
+    for (int i = 2; i < MAX_EDICTS; i++) if (view_refs[i] == ref && qev_PixelsView()->objects[i].count)
+        return view_groups[i] == 1 && qev_FallenAnimation(view_poses[i]);
     return 0;
 }
 /* Called only for nonzero, spatialized PCM samples actually fed to the running
  * mixer. Input is sound identity + channel amplitudes; NO origin/entity/distance.
  * Stereo cannot distinguish front/back, so neither can these captions. */
-void Qev_AudibleSound(const char *name, int left, int right) {
+void qev_AudibleSound(const char *name, int left, int right) {
     const char *kind = "sound";
     int direction, loudness, n;
     if (!audio_access || !ready() || booting || (paused && remaining == 0) || volume.value <= 0 || snd_blocked || !name) return;
@@ -256,42 +256,42 @@ void Qev_AudibleSound(const char *name, int left, int right) {
 static void clear_action(void) {
     lease = 0; lease_deadline = 0; selected_ref = firing = jumping = selected_weapon = melee_approach = 0;
     input_forward = input_side = input_up = input_yaw_rate = input_pitch_rate = 0;
-    Qev_ClearKeys();
+    qev_ClearKeys();
 }
 static void cancel_action(const char *reason) {
-    if (selected_ref) Qev_RecenterRelease(&view_recovery, Sys_FloatTime());
+    if (selected_ref || input_pitch_rate != 0) qev_RecenterRelease(&view_recovery, Sys_FloatTime());
     clear_action(); remaining = 0; stop_reason = reason;
 }
 static void audio_pause(int stop) { if (SDL_WasInit(SDL_INIT_AUDIO)) SDL_PauseAudio(stop); }
-void Qev_WorldChanged(void) {
+void qev_WorldChanged(void) {
     epoch++; control_session++; tick = 0; paused = owned = booting = 1;
     remaining = 0; accumulator = 0; stop_reason = NULL; heard_count = 0;
     body_moving = motion_requested = no_movement_ticks = 0;
-    Qev_RecenterReset(&view_recovery);
-#ifdef QEV_EVALUATION
+    qev_RecenterReset(&view_recovery);
+#ifdef qev_EVALUATION
     eval_distance = eval_displacement = 0;
     eval_move_ticks = eval_attack_ticks = eval_motion_requested = eval_anchor_valid = 0;
 #endif
     memset(view_refs, 0, sizeof(view_refs));
-    Qev_PixelsReset(); view_tick = -1; view_reason = "World changed; awaiting rendered frame";
+    qev_PixelsReset(); view_tick = -1; view_reason = "World changed; awaiting rendered frame";
     clear_action(); audio_pause(1);
 }
-void Qev_EntityFreed(edict_t *e) {
+void qev_EntityFreed(edict_t *e) {
     int slot = NUM_FOR_EDICT(e);
     if (slot >= 0 && slot < MAX_EDICTS) view_refs[slot] = 0;
 }
-int Qev_OwnsInput(void) { return owned; }
-void Qev_PreRender(void) {
+int qev_OwnsInput(void) { return owned; }
+void qev_PreRender(void) {
     if (owned && cls.signon == SIGNONS) { scr_con_current = 0; Con_ClearNotify(); }
 }
 static void screen_objects_json(const qev_pixel_view_t *v, int group, int available) {
-    int selected[QEV_MAX_SEEN], count = 0, total = 0, i, j, pos;
+    int selected[qev_MAX_SEEN], count = 0, total = 0, i, j, pos;
     if (available) for (i = 2; i < MAX_EDICTS; i++) {
         if (!view_kinds[i] || view_groups[i] != group || !v->objects[i].count || !view_refs[i]) continue;
         total++; pos = 0;
         while (pos < count && v->objects[selected[pos]].count >= v->objects[i].count) pos++;
-        if (pos >= QEV_MAX_SEEN) continue;
-        if (count < QEV_MAX_SEEN) count++;
+        if (pos >= qev_MAX_SEEN) continue;
+        if (count < qev_MAX_SEEN) count++;
         for (j = count - 1; j > pos; j--) selected[j] = selected[j-1];
         selected[pos] = i;
     }
@@ -310,7 +310,7 @@ static void screen_objects_json(const qev_pixel_view_t *v, int group, int availa
     append("],\"%sOmitted\":%d", group == 1 ? "enemies" : group == 0 ? "pickups" : "features", total-count);
 }
 static void screen_json(void) {
-    const qev_pixel_view_t *v = Qev_PixelsView();
+    const qev_pixel_view_t *v = qev_PixelsView();
     const char *reason = view_reason;
     int available = view_available();
     if (!available && !reason) reason = view_tick != tick ? "Awaiting current rendered frame" : "Player view covered";
@@ -320,7 +320,7 @@ static void screen_json(void) {
     append("},\"scene\":[");
     for (int cell = 0; available && cell < 9; cell++) {
         if (cell) append(","); append("[");
-        for (int s = 0; s < QEV_SURFACES; s++) { if (s) append(","); append("%d", v->scene[cell][s]); }
+        for (int s = 0; s < qev_SURFACES; s++) { if (s) append(","); append("%d", v->scene[cell][s]); }
         append("]");
     }
     append("],\"enemies\":"); screen_objects_json(v, 1, available);
@@ -361,7 +361,7 @@ EMSCRIPTEN_KEEPALIVE const char *qev_snapshot(void) {
     }
     append("]}}"); return json;
 }
-#ifdef QEV_EVALUATION
+#ifdef qev_EVALUATION
 EMSCRIPTEN_KEEPALIVE const char *qev_evaluation(void) {
     static char report[256];
     snprintf(report, sizeof(report), "{\"testOnly\":true,\"distance\":%.2f,\"maxDisplacement\":%.2f,\"movingTicks\":%d,\"attackTicks\":%d}",
@@ -383,12 +383,12 @@ static void evaluation_frame(vec3_t before) {
 EMSCRIPTEN_KEEPALIVE void qev_pause(void) {
     if (remaining > 0 || lease > 0) stop_reason = "Interrupted by Pause.";
     control_session++; paused = owned = 1; remaining = 0; accumulator = 0; clear_action();
-    Qev_RecenterSuspend(&view_recovery); audio_pause(1);
+    qev_RecenterSuspend(&view_recovery); audio_pause(1);
 }
 EMSCRIPTEN_KEEPALIVE int qev_play(void) {
     if (!ready()) return 0;
     control_session++; clear_action(); remaining = 0; owned = paused = 0; accumulator = 0; stop_reason = NULL;
-    Qev_RecenterForget(&view_recovery);
+    qev_RecenterForget(&view_recovery);
     key_dest = key_game; Cbuf_AddText("+mlook\n"); audio_pause(0); return 1;
 }
 EMSCRIPTEN_KEEPALIVE int qev_speed(float scale) {
@@ -398,9 +398,9 @@ EMSCRIPTEN_KEEPALIVE int qev_speed(float scale) {
 /* Structural bounds and observability only. No tactical veto, ammo check, hazard
  * check, speculative collision or automatic alternative. Normal physics decides. */
 static int set_command(int ref, float forward, float side, float up, float yaw_rate, float pitch_rate, int attack, int jump, int weapon, int ticks, int approach_melee) {
-    if (!ready() || player()->v.health <= 0 || cl.intermission || ticks < 1 || ticks > QEV_LIVE_TICKS || ref < 0 ||
+    if (!ready() || player()->v.health <= 0 || cl.intermission || ticks < 1 || ticks > qev_LIVE_TICKS || ref < 0 ||
         !isfinite(forward) || !isfinite(side) || !isfinite(up) || !isfinite(yaw_rate) || !isfinite(pitch_rate) ||
-        forward*forward + side*side > 1.001f || fabsf(up) > 1 || fabsf(yaw_rate) > QEV_TURN || fabsf(pitch_rate) > QEV_TURN ||
+        forward*forward + side*side > 1.001f || fabsf(up) > 1 || fabsf(yaw_rate) > qev_TURN || fabsf(pitch_rate) > qev_TURN ||
         (attack != 0 && attack != 1) || (jump != 0 && jump != 1) || weapon < 0 || weapon > 8 ||
         (approach_melee != 0 && approach_melee != 1)) return 0;
     if ((ref && (!contact(ref) || (attack && fallen_contact(ref)))) || (weapon && !(cl.items & weapons[weapon-1]))) return 0;
@@ -411,7 +411,7 @@ static int set_command(int ref, float forward, float side, float up, float yaw_r
     selected_ref = ref; input_forward = forward; input_side = side; input_up = up;
     input_yaw_rate = yaw_rate; input_pitch_rate = pitch_rate; firing = attack; jumping = jump; selected_weapon = weapon;
     melee_approach = approach_melee;
-    Qev_RecenterCommand(&view_recovery, ref != 0, pitch_rate != 0, Sys_FloatTime());
+    qev_RecenterCommand(&view_recovery, ref != 0, pitch_rate != 0, Sys_FloatTime());
     lease = ticks; action_serial++; action_ticks = weapon_presses = melee_approach_ticks = 0; key_dest = key_game; return 1;
 }
 EMSCRIPTEN_KEEPALIVE int qev_command(int expected_epoch, int expected_tick, int ref, float forward, float side, float up,
@@ -428,13 +428,13 @@ EMSCRIPTEN_KEEPALIVE int qev_auto(void) {
 EMSCRIPTEN_KEEPALIVE int qev_live_command(int expected_epoch, int observed_tick, int session, int ref, float forward, float side, float up,
     float yaw_rate, float pitch_rate, int attack, int jump, int weapon, int ticks, int approach_melee) {
     if (paused || !owned || remaining || session != control_session || epoch != expected_epoch || observed_tick < 0 ||
-        observed_tick > tick || tick-observed_tick > QEV_MAX_AGE) return 0;
+        observed_tick > tick || tick-observed_tick > qev_MAX_AGE) return 0;
     if (!set_command(ref, forward, side, up, yaw_rate, pitch_rate, attack, jump, weapon, ticks, approach_melee)) return 0;
     lease_deadline = Sys_FloatTime() + 1.5; return 1;
 }
 EMSCRIPTEN_KEEPALIVE int qev_step_frame(int expected_epoch, int expected_tick) {
     if (!ready() || !paused || remaining || epoch != expected_epoch || tick != expected_tick || player()->v.health <= 0 || cl.intermission) return 0;
-    clear_action(); Qev_RecenterSuspend(&view_recovery);
+    clear_action(); qev_RecenterSuspend(&view_recovery);
     stop_reason = NULL; owned = 1; remaining = 1; accumulator = 0; key_dest = key_game; audio_pause(0); return 1;
 }
 EMSCRIPTEN_KEEPALIVE int qev_new_game(const char *name, int difficulty) {
@@ -446,36 +446,38 @@ EMSCRIPTEN_KEEPALIVE int qev_new_game(const char *name, int difficulty) {
     snprintf(command, sizeof(command), "disconnect\nskill %d\nmap %s\n", difficulty, name); Cbuf_AddText(command); return 1;
 }
 EMSCRIPTEN_KEEPALIVE int qev_load_map(const char *name) { return qev_new_game(name, current_skill); }
-void Qev_ApplyInput(usercmd_t *cmd) {
-    float dyaw = input_yaw_rate * QEV_DT, dpitch = input_pitch_rate * QEV_DT;
+void qev_ApplyInput(usercmd_t *cmd) {
+    float dyaw = input_yaw_rate * qev_DT, dpitch = input_pitch_rate * qev_DT;
     int fire = firing;
-#ifdef QEV_EVALUATION
+#ifdef qev_EVALUATION
     eval_motion_requested = 0;
 #endif
-    Qev_Buttons(0, 0, 0);
+    qev_Buttons(0, 0, 0);
     if (!ready() || !owned || player()->v.health <= 0 || cl.intermission || (paused && !remaining)) return;
-    /* An independent, bounded PITCH-ONLY cleanup after pixel aiming releases.
+    /* Bounded PITCH-ONLY cleanup after pixel aim or explicit model look releases.
      * No movement/buttons/yaw are retained, no targets are inspected or chosen.
-     * Frozen Step never runs extra frames; its next ordinary command can finish
-     * leveling. Stop suspends recovery, explicit pitch/manual play cancels it. */
-    if (view_recovery.active) {
-        cl.viewangles[PITCH] = Qev_RecenterStep(&view_recovery, cl.viewangles[PITCH], QEV_DT, Sys_FloatTime());
+     * Active target/pitch input wins. Stop and frozen Step add no cleanup frames;
+     * an ordinary subsequent command can finish. Manual play gives up ownership. */
+    if (view_recovery.active && !selected_ref && input_pitch_rate == 0) {
+        cl.viewangles[PITCH] = qev_RecenterStep(&view_recovery, cl.viewangles[PITCH], qev_DT, Sys_FloatTime());
         V_StopPitchDrift();
     }
     if (lease <= 0) return;
     if (selected_ref) {
         const qev_pixel_object_t *o = contact(selected_ref);
-        const qev_pixel_view_t *v = Qev_PixelsView();
+        const qev_pixel_view_t *v = qev_PixelsView();
         if (!o) { cancel_action("Chosen contact is no longer visible."); return; }
         if (firing && fallen_contact(selected_ref)) { cancel_action("Chosen enemy is visibly dead or dying."); return; }
         /* Image-space servo toward a painted pixel, with camera intrinsics only.
          * No world position, target velocity, LOS/hit test or future interception. */
         dyaw = -atanf((2*(o->aim_x+0.5f)/v->width-1) * tanf(r_refdef.fov_x*M_PI/360)) * 180/M_PI;
         dpitch = atanf((2*(o->aim_y+0.5f)/v->height-1) * tanf(r_refdef.fov_y*M_PI/360)) * 180/M_PI;
-        dyaw = clampf(dyaw, -QEV_AIM_TURN*QEV_DT, QEV_AIM_TURN*QEV_DT);
-        dpitch = clampf(dpitch, -QEV_AIM_TURN*QEV_DT, QEV_AIM_TURN*QEV_DT);
-        Qev_RecenterAimed(&view_recovery);
+        dyaw = clampf(dyaw, -qev_AIM_TURN*qev_DT, qev_AIM_TURN*qev_DT);
+        dpitch = clampf(dpitch, -qev_AIM_TURN*qev_DT, qev_AIM_TURN*qev_DT);
+        qev_RecenterAimed(&view_recovery);
         fire = firing && o->at_aim; /* A visible center pixel, NOT guaranteed line of fire/hit. */
+    } else if (input_pitch_rate != 0) {
+        qev_RecenterAimed(&view_recovery); /* A real explicit-look tick owes leveling after release. */
     }
     cl.viewangles[YAW] = anglemod(cl.viewangles[YAW] + dyaw);
     cl.viewangles[PITCH] = clampf(cl.viewangles[PITCH] + dpitch, -70, 80); V_StopPitchDrift();
@@ -484,8 +486,8 @@ void Qev_ApplyInput(usercmd_t *cmd) {
      * switch or ordinary game fallback during the lease. No target-distance,
      * route, collision or damage query: advance along the visible-pixel aim. */
     int melee_forward = melee_approach && active_weapon() == IT_AXE;
-    cmd->forwardmove = QEV_SPEED * (melee_forward ? 1 : input_forward);
-    cmd->sidemove = QEV_SPEED * input_side; cmd->upmove = QEV_SPEED * input_up;
+    cmd->forwardmove = qev_SPEED * (melee_forward ? 1 : input_forward);
+    cmd->sidemove = qev_SPEED * input_side; cmd->upmove = qev_SPEED * input_up;
     if (melee_forward) melee_approach_ticks++;
     /* Equipment accompanies movement/aim, never consumes a separate action. Use
      * the CURRENT HUD: an old observation cannot tell us what is equipped now.
@@ -498,26 +500,26 @@ void Qev_ApplyInput(usercmd_t *cmd) {
     int impulse = action_ticks == 0 && needs_weapon ? selected_weapon : 0;
     if (impulse) fire = 0;
     if (impulse) weapon_presses++;
-    Qev_Buttons(fire, jumping && action_ticks == 0, impulse);
+    qev_Buttons(fire, jumping && action_ticks == 0, impulse);
     motion_requested = melee_forward || input_forward != 0 || input_side != 0 || input_up != 0;
-#ifdef QEV_EVALUATION
+#ifdef qev_EVALUATION
     eval_motion_requested = motion_requested;
     if (fire) eval_attack_ticks++;
 #endif
     action_ticks++;
 }
-void Qev_MainLoop(void) {
+void qev_MainLoop(void) {
     double wall = Sys_FloatTime(), elapsed = last_wall ? wall-last_wall : 0; int n = 0;
     last_wall = wall;
     if (!paused && owned && lease > 0 && lease_deadline > 0 && wall >= lease_deadline) cancel_action("Action wall-time watchdog expired.");
     if (ready() && !booting && paused && remaining == 0) { accumulator = 0; Sys_SendKeyEvents(); return; }
     accumulator += fmin(fmax(elapsed, 0), 0.1) * (booting ? 1 : speed_scale);
-    while (accumulator >= QEV_DT && n++ < 6) {
+    while (accumulator >= qev_DT && n++ < 6) {
         int before_epoch = epoch, was_ready = ready(); vec3_t before;
         if (was_ready) VectorCopy(player()->v.origin, before);
-        accumulator -= QEV_DT; if (owned) key_dest = key_game;
+        accumulator -= qev_DT; if (owned) key_dest = key_game;
         motion_requested = 0;
-        Host_Frame(QEV_DT); if (!ready()) continue;
+        Host_Frame(qev_DT); if (!ready()) continue;
         tick++;
         if (booting) { booting = 0; qev_pause(); break; }
         if (epoch != before_epoch) break;
@@ -529,17 +531,17 @@ void Qev_MainLoop(void) {
             body_moving = travelled > 0.05f && travelled <= 128;
             no_movement_ticks = motion_requested && !body_moving ? (no_movement_ticks < 6000 ? no_movement_ticks + 1 : 6000) : 0;
         }
-#ifdef QEV_EVALUATION
+#ifdef qev_EVALUATION
         if (was_ready) evaluation_frame(before);
 #endif
         if (player()->v.health <= 0 || cl.intermission) {
             cancel_action(player()->v.health <= 0 ? "Player died." : "Level completed.");
-            Qev_RecenterForget(&view_recovery); epoch++; qev_pause(); break;
+            qev_RecenterForget(&view_recovery); epoch++; qev_pause(); break;
         }
         /* Own displacement also supplies the binary body-motion feedback above.
          * Coordinates/distances never reach model observation or route planning. */
         if (was_ready) { vec3_t delta; VectorSubtract(player()->v.origin, before, delta);
-            if (length3(delta) > 128) { cancel_action("Player teleported."); Qev_RecenterForget(&view_recovery); epoch++; memset(view_refs, 0, sizeof(view_refs)); qev_pause(); break; }
+            if (length3(delta) > 128) { cancel_action("Player teleported."); qev_RecenterForget(&view_recovery); epoch++; memset(view_refs, 0, sizeof(view_refs)); qev_pause(); break; }
         }
         if (lease > 0 && --lease == 0) cancel_action("Action lease expired.");
         if (remaining > 0 && --remaining == 0) { qev_pause(); break; }

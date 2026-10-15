@@ -1,6 +1,6 @@
-# Qev implementation
+# qev implementation
 
-Qev has **one player-observable controller**, not separate assisted/unassisted modes.
+qev has **one player-observable controller**, not separate assisted/unassisted modes.
 The old GPS, route/cover probes and tactical shortlisting have been removed, including
 native exports. See [state-and-actions.md](state-and-actions.md) for the sensing boundary
 and [qwasm-integration.md](qwasm-integration.md) for upstream hooks.
@@ -33,7 +33,7 @@ its QuakeC/program resources have different obligations from its artwork/sounds.
 
 ## Native bridge
 
-`Engine.start()` rejects old builds: screen capability **3** and control capability **6**
+`Engine.start()` rejects old builds: screen capability **3** and control capability **7**
 are required. `qev_snapshot()` returns schema **4**, `controlMode: "player-observable"`.
 
 | Export | Contract |
@@ -249,10 +249,11 @@ rather than loosening control guards or inventing successful actions.
 
 ### Returning the view to level
 
-`qev_recenter.c/h` has no entity/world access. Pixel aiming owns pitch until its command ends;
-loss/death/expiry or an ordinary replacement arms a 180°/s return toward zero, bounded to 30 ticks
-or 750 wall ms. This changes no yaw, movement, firing, equipment or target. A new pixel target
-preempts recovery; explicit look-up/down gives up automatic pitch ownership. Stop suspends it,
+`qev_recenter.c/h` has no entity/world access. Executed pixel aiming or explicit model look-up/down
+owns pitch until its command ends; loss/death/expiry or an ordinary replacement arms a 180°/s return
+toward zero, bounded to 30 ticks or 750 wall ms. This changes no yaw, movement, firing, equipment or
+target. New pixel targets and active look-up/down commands preempt recovery; accepted but unexecuted
+camera commands acquire no new recovery obligation. Stop suspends it,
 manual control/transitions forget it. Frozen Step adds no frames; its next ordinary command can
 finish leveling. The world-local cumulative `viewRecovery.ticks` and boolean `active`/`level`
 report own-camera execution only, not angles, headings or target range. The observed record-window
@@ -278,7 +279,7 @@ requests, responses and outcome are inserted as text, not HTML. Identical submit
 shown once verbatim; different baseline states remain an ordered list. Copy uses that card's
 payload; old cards never become executable. History retains at most 50 records.
 
-Exports are **version 13**: single control policy, active/per-record priorities, original requests
+Exports are **version 14**: single control policy, active/per-record priorities, original requests
 and responses, full `sampling` ledgers, sampled tactic/target plus `weaponSelection`, full
 observations, image/history evidence, application age, actual input-tick accounting,
 `weaponPresses`, `meleeApproachTicks` and separate `viewRecovery` feedback. No GPS/route telemetry. The observation window

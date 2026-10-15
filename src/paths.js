@@ -1,4 +1,4 @@
-// Resolve against the application, not the domain root: / locally, /Qev/ on
+// Resolve against the application, not the domain root: / locally, /qev/ on
 // project Pages, or any other static subdirectory. Workers use the same tree.
 const root = new URL("../", import.meta.url).href;
 export function appURL(path, base = root) {

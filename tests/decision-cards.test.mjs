@@ -117,7 +117,7 @@ test("a baseline batch exposes every actual state in request order, not just the
 
 test("the steel wordmark is self-contained vector artwork, not a font or remote image", () => {
   const svg = readFileSync(new URL("../public/brand/qev-logo.svg", import.meta.url), "utf8");
-  assert.match(svg, /<title id="qev-title">QEV — Quad-forged steel<\/title>/);
+  assert.match(svg, /<title id="qev-title">qev — Quad-forged steel<\/title>/);
   assert.match(svg, /viewBox="0 0 1200 560"/);
   assert.match(svg, /id="qev-letters"/);
   assert.doesNotMatch(svg, /<(?:script|image|foreignObject|text)\b|(?:href|src)="(?:https?:|data:|\/\/)/i);
@@ -138,11 +138,11 @@ test("the HTML keeps the card feed and compact controls without the old game pan
   assert.match(priorities, /id="priority-status"[^>]*role="status"/);
   assert.match(priorities, /id="reset-priorities"[^>]*disabled/);
   const masthead = html.match(/<header class="masthead">([\s\S]*?)<\/header>/)[1];
-  assert.match(masthead, /<img class="brand-logo" src="\.\/brand\/qev-logo\.svg" width="120" height="56" alt="QEV">/);
+  assert.match(masthead, /<img class="brand-logo" src="\.\/brand\/qev-logo\.svg" width="120" height="56" alt="qev">/);
   assert.match(masthead, /<h1>quake played by a local decision model<\/h1>/);
-  assert.match(html, /<title>QEV - quake played by a local decision model<\/title>/);
+  assert.match(html, /<title>qev - quake played by a local decision model<\/title>/);
   assert.doesNotMatch(masthead, /class="mark"|qev-logo-bronze/);
-  assert.match(masthead, /id="repo-link" href="https:\/\/github\.com\/robtandy\/Qev"/);
+  assert.match(masthead, /id="repo-link" href="https:\/\/github\.com\/robtandy\/qev"/);
   const xLink = masthead.match(/<a id="x-post-link"[^>]*>𝕏<\/a>/)[0];
   assert.match(xLink, /aria-disabled="true"/);
   assert.doesNotMatch(xLink, /href=/);

@@ -59,5 +59,5 @@ export function makeServer(projectRoot = root, { evaluationEngine = false } = {}
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.argv.find((arg) => arg.startsWith("--port="))?.slice(7) || process.env.PORT || 8090);
-  makeServer().listen(port, "127.0.0.1", () => console.log(`Qev: http://127.0.0.1:${port} (local only; only the verified LibreQuake demo PAKs may be served)`));
+  makeServer().listen(port, "127.0.0.1", () => console.log(`qev: http://127.0.0.1:${port} (local only; only the verified LibreQuake demo PAKs may be served)`));
 }

@@ -23,13 +23,15 @@ test("native pitch recovery is bounded, reaches level and yields to new targets/
 
 test("pitch recovery has no target/entity/route access and cannot add movement, yaw, attacks or world frames", () => {
   const helper = readFileSync(resolve(root, "engine/qev_recenter.c"), "utf8");
-  assert.doesNotMatch(helper, /quakedef|EDICT|origin|contact\(|SV_|Host_Frame|forwardmove|sidemove|yaw|Qev_Buttons/);
+  assert.doesNotMatch(helper, /quakedef|EDICT|origin|contact\(|SV_|Host_Frame|forwardmove|sidemove|yaw|qev_Buttons/);
   const bridge = readFileSync(resolve(root, "engine/qev_bridge.c"), "utf8");
-  assert.match(bridge, /cl.viewangles\[PITCH\] = Qev_RecenterStep/);
-  assert.match(bridge, /if \(selected_ref\) Qev_RecenterRelease/);
-  assert.match(bridge, /Qev_RecenterCommand\(&view_recovery, ref != 0, pitch_rate != 0/);
+  assert.match(bridge, /cl.viewangles\[PITCH\] = qev_RecenterStep/);
+  assert.match(bridge, /if \(selected_ref \|\| input_pitch_rate != 0\) qev_RecenterRelease/);
+  assert.match(bridge, /else if \(input_pitch_rate != 0\) \{\s*qev_RecenterAimed/);
+  assert.match(bridge, /view_recovery.active && !selected_ref && input_pitch_rate == 0/);
+  assert.match(bridge, /qev_RecenterCommand\(&view_recovery, ref != 0, pitch_rate != 0/);
   assert.match(bridge, /!owned \|\| player\(\)->v.health <= 0 \|\| cl.intermission \|\| \(paused && !remaining\)/);
-  assert.match(bridge, /Qev_RecenterReset\(&view_recovery\)/);
+  assert.match(bridge, /qev_RecenterReset\(&view_recovery\)/);
 });
 
 test("camera cleanup counts observed ticks independently of the action lease and does not fabricate outcomes", async () => {

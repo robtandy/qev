@@ -1,6 +1,6 @@
 # Qwasm integration source
 
-Qev's engine bridge, visible-pixel reducer, animation annotations, camera recovery and the modifications in `qwasm.patch` are provided under the
+qev's engine bridge, visible-pixel reducer, animation annotations, camera recovery and the modifications in `qwasm.patch` are provided under the
 **GNU General Public License, version 2 or (at your option) any later version**,
 consistent with the Quake/Qwasm engine. They are provided without warranty.
 [`COPYING`](COPYING) is the license text copied verbatim from the pinned Qwasm source.
@@ -11,7 +11,7 @@ retains upstream source headers and notices, including later Qwasm contributions
 
 - Upstream: <https://github.com/GMH-Code/Qwasm>
 - Base commit: `f56b5e71e4be8effede29bae1785a5306dcc0249`
-- Qev modification date: **2026-10-04** (subsequent changes are recorded in Git).
+- qev modification date: **2026-10-04** (subsequent changes are recorded in Git).
 - Toolchain: Emscripten **3.1.74**.
 - Source/build procedure: [`../scripts/build-engine.mjs`](../scripts/build-engine.mjs)
   and the setup instructions in [`../README.md`](../README.md).
@@ -39,8 +39,8 @@ depth-buffer inputs. Labels remain a disclosed concession, not RGB/audio recogni
 LibreQuake `frameN` names alone carry no such meaning. Whole-model fingerprints, byte lengths
 and frame counts must match; unknown/grouped appearances abstain. No server health/deadflag,
 AI intent or future frame is used.
-`qev_recenter.c/h` restore pitch toward level after pixel aiming, bounded by rate, ticks and wall
-time. This pure own-camera helper cannot access entities, pick a target, change yaw or keep
+`qev_recenter.c/h` restore pitch toward level after pixel aiming or an explicit model look-up/down
+command releases, bounded by rate, ticks and wall time. This pure own-camera helper cannot access entities, pick a target, change yaw or keep
 movement/attack held. New targets and explicit pitch commands take priority; Stop freezes it.
 Only activity, boolean level confirmation and actual camera-changing tick counts are reported.
 The build adds all four modules without embedding assets.

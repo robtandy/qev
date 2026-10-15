@@ -1,6 +1,6 @@
 # Qwasm integration and source hooks
 
-Qev pins [Qwasm](https://github.com/GMH-Code/Qwasm) commit
+qev pins [Qwasm](https://github.com/GMH-Code/Qwasm) commit
 `f56b5e71e4be8effede29bae1785a5306dcc0249`, Emscripten 3.1.74, and Kevala npm 0.1.3.
 The generated checkout under `build/qwasm` is patched/rebuilt by `scripts/build-engine.mjs`.
 It is not a maintained user fork. See [implementation.md](implementation.md) for the current
@@ -10,9 +10,9 @@ API and [state-and-actions.md](state-and-actions.md) for the single-controller p
 
 | Source | Integration consequence |
 | --- | --- |
-| `WinQuake/Makefile.emscripten` | Software renderer + SDL2; Qev removes upstream asset preloading and builds a modular ES module |
+| `WinQuake/Makefile.emscripten` | Software renderer + SDL2; qev removes upstream asset preloading and builds a modular ES module |
 | `sys_sdl.c` | Replace wall-time `Host_Frame` calls with the fixed 60 Hz bridge scheduler |
-| `host.c` | Avoid ordinary time filtering/minimum deltas while Qev owns input; don't call extra stopped frames/RNG |
+| `host.c` | Avoid ordinary time filtering/minimum deltas while qev owns input; don't call extra stopped frames/RNG |
 | `cl_main.c` | Gather only the input owned by the controller before sending a normal client command |
 | `cl_input.c` | Movement is in `usercmd_t`; angles are in `cl.viewangles`; attack/jump and weapon impulses are serialized separately |
 | `pr_edict.c` | World changes and freed entity slots invalidate old control/visible capabilities |
@@ -24,7 +24,7 @@ API and [state-and-actions.md](state-and-actions.md) for the single-controller p
 | `snd_mix.c` | Observe nonzero spatialized PCM channel peaks, not server sound events or source positions |
 | `model.c` | Associate exact alias assets with reviewed animation labels at load time; no asset/physics mutation |
 
-The upstream engine is not itself an observation/control API. Qev adds a narrow, versioned
+The upstream engine is not itself an observation/control API. qev adds a narrow, versioned
 bridge, not hard-coded heap offsets, a model-authored console interface, or a plugin that can
 query arbitrary server entities. `world.h` exposes collision/contents primitives, but the
 **controller does not use them for route, support, cover, hazard or LOS probes**.
@@ -37,7 +37,7 @@ of a general interaction button: the reference serializes attack/jump, not a gen
 There is consequently no invented model “use any door/button” command.
 
 The ordinary host loop filters very small frame deltas and has RNG calls outside the filter.
-Qev must not simulate pause by repeatedly calling frames and merely suppressing input. The
+qev must not simulate pause by repeatedly calling frames and merely suppressing input. The
 fixed scheduler freezes world calls completely, resumes without accumulated wall-clock catch-up,
 and scales pacing rather than changing physics step size. UI/key events still run while stopped.
 
@@ -52,8 +52,8 @@ is invalidated on any lost frame; it is never a hidden tracking identity. Standa
 weapon behavior and damage are unchanged. The explicitly offered engagement goal adds forward
 input while the actual HUD weapon is the axe; stationary/raw attacks are not rewritten. It uses
 no target range or collision prediction, and the same visual-loss/death/lease guards release it.
-After pixel aim releases, the pure `qev_recenter.c/h` helper returns pitch toward level with a
-bounded rate/tick/wall lease. It cannot read targets, change yaw or keep movement/fire held.
+After pixel aim or explicit model pitch input releases, the pure `qev_recenter.c/h` helper
+returns pitch toward level with a bounded rate/tick/wall lease. It cannot read targets, change yaw or keep movement/fire held.
 Explicit pitch commands and new targets preempt recovery; Stop freezes it without extra frames.
 Only activity, level confirmation and camera-changing tick counts are exposed, not angles/headings.
 Own-player displacement is an internal teleport
@@ -80,7 +80,7 @@ recognition, and cannot infer front/back, occlusion or a precise source location
 
 Kevala's Laya sequences contain a question/options head and the state in a **single 512-token
 sequence**, with a 192-token head budget. Multiple questions create multiple sequences; a
-multi-question response aggregates `usage.input_tokens`. Qev therefore uses one question per
+multi-question response aggregates `usage.input_tokens`. qev therefore uses one question per
 request item in a single `decideMany` batch, retaining a verbatim shared state and independently
 inspectable per-question usage. This does not create speculative game steps or multiple in-flight
 jobs. Input-limit hits are rejected, not silently treated as fully read observations.
@@ -103,7 +103,7 @@ Publishing integration source does not authorize distributing proprietary Quake 
 the separate terms for LibreQuake resources, Kevala or model weights.
 
 The [Pages workflow](pages-deployment.md) publishes only an allowlisted static artifact under
-`/Qev/`. Runtime asset URLs resolve against the application directory, not the domain root;
+`/qev/`. Runtime asset URLs resolve against the application directory, not the domain root;
 workers and Wasm use the same tree without a service worker or special isolation headers.
 The artifact supplies GPL engine/gamecode source downloads and notices, rejects an evaluation
 engine or stale native-source digest, and never copies the general build directory or weights.

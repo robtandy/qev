@@ -11,7 +11,7 @@ import { PAGE_SOURCES } from "../scripts/pages-sources.mjs";
 import { makePagesServer } from "../scripts/serve-pages.mjs";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 async function temporary(t) { const dir = await mkdtemp(join(tmpdir(), "qev-pages-")); t.after(() => rm(dir, { recursive: true, force: true })); return dir; }
-for (const base of ["http://127.0.0.1:8090/", "https://robtandy.github.io/Qev/", "https://example.org/nested/app/"]) {
+for (const base of ["http://127.0.0.1:8090/", "https://robtandy.github.io/qev/", "https://example.org/nested/app/"]) {
   test(`all runtime asset families stay inside ${base}`, () => {
     for (const path of ["engine/qwasm.mjs", "engine/qwasm.wasm", "vendor/kevala/index.js", "vendor/kevala/engine-worker.js", "demo/pak0.pak", "src/app.js"])
       assert.equal(appURL(path, base), base + path);
@@ -61,22 +61,22 @@ test("Pages rejects stale, embedded-asset and evaluation engines, including a mi
   await writeFile(join(temp, "build/engine/qwasm.wasm"), fakeExports(names));
   await writeFile(join(temp, "engine/qev_bridge.c"), "changed source"); await assert.rejects(verifyPageEngine(temp), /mismatch/);
 });
-test("preview really serves only the static /Qev/ tree, with correct types and no root aliases", async t => {
+test("preview really serves only the static /qev/ tree, with correct types and no root aliases", async t => {
   const temp = await temporary(t), site = join(temp, "site"); await mkdir(join(site, "engine"), { recursive: true });
-  await writeFile(join(site, "index.html"), "Qev"); await writeFile(join(site, "engine/qwasm.wasm"), "wasm"); await writeFile(join(temp, "private.txt"), "private");
+  await writeFile(join(site, "index.html"), "qev"); await writeFile(join(site, "engine/qwasm.wasm"), "wasm"); await writeFile(join(temp, "private.txt"), "private");
   await symlink(join(temp, "private.txt"), join(site, "leak.txt"));
   const server = makePagesServer(site); await new Promise(r => server.listen(0, "127.0.0.1", r));
   t.after(() => new Promise(r => { server.closeAllConnections(); server.close(r); }));
   const url = `http://127.0.0.1:${server.address().port}`;
-  const redirect = await fetch(url + "/Qev", { redirect: "manual" }); assert.equal(redirect.status, 308); assert.equal(redirect.headers.get("location"), "/Qev/");
-  assert.equal(await (await fetch(url + "/Qev/")).text(), "Qev");
+  const redirect = await fetch(url + "/qev", { redirect: "manual" }); assert.equal(redirect.status, 308); assert.equal(redirect.headers.get("location"), "/qev/");
+  assert.equal(await (await fetch(url + "/qev/")).text(), "qev");
   for (const method of ["GET", "HEAD"]) {
-    const r = await fetch(url + "/Qev/engine/qwasm.wasm", { method }); assert.equal(r.status, 200); assert.equal(r.headers.get("content-type"), "application/wasm");
+    const r = await fetch(url + "/qev/engine/qwasm.wasm", { method }); assert.equal(r.status, 200); assert.equal(r.headers.get("content-type"), "application/wasm");
     assert.equal(await r.text(), method === "GET" ? "wasm" : ""); assert.equal(r.headers.get("cross-origin-embedder-policy"), null);
   }
-  for (const path of ["/", "/engine/qwasm.wasm", "/Qev/.env", "/Qev/leak.txt", "/Qev/src/%2e%2e%2f%2e%2e%2fprivate.txt", "/Qev/%00bad", "/Qev/engine/"])
+  for (const path of ["/", "/engine/qwasm.wasm", "/qev/.env", "/qev/leak.txt", "/qev/src/%2e%2e%2f%2e%2e%2fprivate.txt", "/qev/%00bad", "/qev/engine/"])
     assert.ok([403, 404].includes((await fetch(url + path)).status), path);
-  assert.equal((await fetch(url + "/Qev/", { method: "POST" })).status, 405);
+  assert.equal((await fetch(url + "/qev/", { method: "POST" })).status, 405);
 });
 test("deployment supplies pinned GPL source downloads and uploads only the generated artifact", async () => {
   assert.equal(PAGE_SOURCES.length, 2);

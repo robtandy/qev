@@ -321,7 +321,7 @@ for (const id of ["map", "difficulty"]) $(id).addEventListener("change", () => g
 $("speed").addEventListener("change", () => guard(async () => engine?.speed(Number($("speed").value))));
 $("export").addEventListener("click", () => {
   const priorityOrder = currentPriorityOrder();
-  const url = URL.createObjectURL(new Blob([json({ version: 13, samplingMethod: SAMPLING_METHOD, controlMode: CONTROL_MODE, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), memory: agent.observations.describe(snapshot), observationPolicy: OBSERVATION_POLICY, controller: CONTROLLER_POLICY, records: agent.history })], { type: "application/json" }));
+  const url = URL.createObjectURL(new Blob([json({ version: 14, samplingMethod: SAMPLING_METHOD, controlMode: CONTROL_MODE, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), memory: agent.observations.describe(snapshot), observationPolicy: OBSERVATION_POLICY, controller: CONTROLLER_POLICY, records: agent.history })], { type: "application/json" }));
   const link = document.createElement("a"); link.href = url; link.download = "qev-trace.json"; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
