@@ -11,9 +11,9 @@ and [qwasm-integration.md](qwasm-integration.md) for upstream hooks.
 - Qwasm: `f56b5e71e4be8effede29bae1785a5306dcc0249`.
 - Emscripten: **3.1.74**, SDK source `3d6d8ee910466516a53e665b86458faa81dae9ba`.
 - Kevala: npm **0.1.3**, locked in `package-lock.json`.
-- `scripts/build-engine.mjs` restores/reapplies 14 patched upstream files in the pinned,
+- `scripts/build-engine.mjs` restores/reapplies 15 patched upstream files in the pinned,
   generated `build/qwasm` checkout and copies `qev_bridge.c/h`, `qev_pixels.c/h` and
-  `qev_animation.c/h`, `qev_recenter.c/h` and `qev_nearest.c/h` there. `animation-data.mjs` validates `engine/animation-labels.json`
+  `qev_animation.c/h`, `qev_recenter.c/h`, `qev_nearest.c/h` and `qev_present.c/h` there. `animation-data.mjs` validates `engine/animation-labels.json`
   and emits the native annotation header only into the ignored build.
 - The modular ES-module engine goes in ignored `build/engine/`. There is no asset preload.
 - Bridge/reducer finite-number checks are compiled without fast-math. The browser tests
@@ -34,12 +34,13 @@ its QuakeC/program resources have different obligations from its artwork/sounds.
 
 ## Native bridge
 
-`Engine.start()` rejects old builds: screen capability **4** and control capability **8**
+`Engine.start()` rejects old builds: screen capability **4** and control capability **9**
 are required. `qev_snapshot()` returns schema **5**, `controlMode: "visible-assisted"`.
 
 | Export | Contract |
 | --- | --- |
 | `qev_snapshot()` | JSON copy of lifecycle/HUD state and permitted observations |
+| `qev_diagnostics()` | Separate engine-lifetime timing/presentation counters; never model input |
 | `qev_screen_version()` / `qev_control_version()` | Capability handshake |
 | `qev_pause()` | Clear keys/leases, stop remaining ticks, freeze world time and game audio |
 | `qev_speed(scale)` | Wall-time pacing, 0.05–1; physics remains 60 Hz |
@@ -97,6 +98,12 @@ a replacement cannot pause time or reset the accumulator. Native tick expiry and
 wall-time watchdog** independently release inputs. JS rejects replies older than 60 game
 ticks or 1.5 seconds; native application rechecks epoch, session and tick age. A rejected
 replacement does not become a different action; the previous bounded command may continue.
+Three consecutive age-only failures stop Auto with explicit tick/wall reasons and a compact
+**Copy diagnostics** report. A stopped Step still supports slow inference without extending
+live freshness. The exact request is dispatched before inspector rendering, allowing worker/UI
+overlap. Catch-up callbacks retain every host/render/attribution tick but coalesce redundant SDL
+uploads into a final full-frame presentation, including early exits. See [mobile performance](mobile-performance.md)
+for timing semantics, single-flight error handling and validation limits.
 
 Stop, focus/tab loss, model/backend/priority changes, map/difficulty changes, Reset, death,
 and completion prevent obsolete replies from restarting play.
@@ -108,7 +115,7 @@ filters a tactic. Separate aggregate evaluation metrics exist only in the test b
 
 `Respawner` waits 750 ms after death, restarts the actual current map/skill once, and resumes
 Auto only when the old inference settles and its generation/model/mode still permit it.
-Stop/reordering/help/Reset cancel pending resumption. Inspection stays stopped. Level completion
+Stop/reordering/Reset cancel pending resumption. Inspection stays stopped. Level completion
 is solely the game's intermission signal, not a score inferred from movement or kills.
 
 ## Observation adapters
@@ -285,7 +292,7 @@ requests, responses and outcome are inserted as text, not HTML. Identical submit
 shown once verbatim; different baseline states remain an ordered list. Copy uses that card's
 payload; old cards never become executable. History retains at most 50 records.
 
-Exports are **version 15**: single control policy, active/per-record priorities, original requests
+Exports are **version 16**: compact diagnostics and reply/application freshness evidence, plus the single control policy, active/per-record priorities, original requests
 and responses, action `sampling` ledger, separate automatic score/application plans, `selectedAtScore`,
 resolved `selection` / `weaponSelection` with automatic method identifiers, full
 observations, image/history evidence, application age, actual input-tick accounting,

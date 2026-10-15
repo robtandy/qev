@@ -1,8 +1,12 @@
-import { prepareDecision, rankDecision, resolveSelection, DEFAULT_DECISION_FORMAT, validateDecisionFormat, MAX_DECISION_AGE_TICKS, MAX_DECISION_AGE_MS } from "./decisions.js";
+import { prepareDecision, rankDecision, resolveSelection, DEFAULT_DECISION_FORMAT, validateDecisionFormat } from "./decisions.js";
 import { DEFAULT_PRIORITY_ORDER, validatePriorityOrder } from "./objective.js";
 import { ScreenMemory } from "./screen.js";
 import { ObservationMemory } from "./perception.js";
 import { automaticPlan, bindAutomatic } from "./automatic.js";
+import { liveFreshness, freshnessMessage } from "./live-budget.js";
+
+// Performance evidence is optional and must not change a request or block play.
+function nativeTiming(engine) { try { return engine.diagnostics?.() ?? null; } catch { return null; } }
 
 // Actual camera-cleanup ticks observed in this window, including neutral live
 // time after a target lease. Not movement, attack ticks, or extra Step frames.
@@ -85,11 +89,9 @@ export class Agent {
     this.observations.observe(now, this.screenMemory.describe(now));
     if (this.memory && now.epoch !== this.memory.epoch) this.memory = null;
   }
-  liveValid(now, record) {
-    return now.ready && now.alive && !now.completed && !now.paused && now.owned &&
-      now.epoch === record.before.epoch && now.controlSession === this.liveSession &&
-      now.controlSession === record.before.controlSession && now.tick >= record.before.tick &&
-      now.tick - record.before.tick <= MAX_DECISION_AGE_TICKS && performance.now() - record.startedMono <= MAX_DECISION_AGE_MS;
+  liveCheck(now, record, model) {
+    return liveFreshness(now, record.before, { session: this.liveSession, ageMs: performance.now() - record.startedMono,
+      generationChanged: record.generation !== this.generation, modelChanged: model !== this.getModel() });
   }
   async score({ realtime = false } = {}) {
     if (this.busy) throw new Error("Wait for the current score or step to finish.");
@@ -99,7 +101,7 @@ export class Agent {
       if (this.liveSession !== null) throw new Error("Pause Auto before scoring for inspection.");
       this.engine.pause();
     }
-    const before = this.engine.snapshot();
+    const observedMono = performance.now(), before = this.engine.snapshot();
     if (!before.ready || !before.alive || before.completed) throw new Error("Start a live single-player game first.");
     if (realtime && (this.liveSession === null || before.paused || !before.owned || before.controlSession !== this.liveSession)) throw new Error("Start real-time Auto before scoring a moving world.");
     this.observeObservation(before);
@@ -113,24 +115,36 @@ export class Agent {
       id: ++this.sequence, status: "scoring", mode: realtime ? "realtime" : "inspection", generation: this.generation,
       model: structuredClone(model.info ?? {}), before: structuredClone(before), ...prepared,
       responses: null, ranking: [], selectedIndex: null, sampling: null, startedAt: new Date().toISOString(),
-      startedMono: performance.now(), ms: null, appliedAt: null, after: null, error: null,
+      startedMono: observedMono, preparedMs: performance.now() - observedMono, ms: null, appliedAt: null, after: null, error: null,
+      validation: null, nativeBefore: nativeTiming(this.engine), nativeAfter: null,
     };
     this.current = record;
     this.history.push(record);
     if (this.history.length > 50) this.history.shift();
     const job = { generation: this.generation, record, model };
     this.inflight = job;
-    this.onChange();
     try {
-      const responses = await model.decideMany(record.requests);
+      // Dispatch before building inspector payloads/DOM. The worker can compute
+      // while the main thread displays the already-recorded exact request.
+      record.submittedAfterMs = performance.now() - observedMono;
+      const pending = Promise.resolve(model.decideMany(record.requests));
+      // Even a display failure must wait for the already-issued request: never
+      // clear single-flight ownership while a worker reply is still pending.
+      const displayStart = performance.now(); let displayFailure = null;
+      try { this.onChange(); } catch (error) { displayFailure = { error }; }
+      record.displayPreparedMs = performance.now() - displayStart;
+      const responses = await pending;
       record.ms = performance.now() - record.startedMono;
       record.responses = responses; // Untouched response, including raw probabilities and timing.
+      if (displayFailure) throw displayFailure.error;
       const now = this.engine.snapshot();
       record.checkedAt = structuredClone(now);
-      const valid = realtime ? this.liveValid(now, record) : now.ready && now.epoch === before.epoch && now.tick === before.tick && now.paused && now.alive && !now.completed;
+      record.nativeAfter = nativeTiming(this.engine);
+      if (realtime) record.validation = record.replyValidation = { phase: "reply", ...this.liveCheck(now, record, model) };
+      const valid = realtime ? record.validation.valid : now.ready && now.epoch === before.epoch && now.tick === before.tick && now.paused && now.alive && !now.completed;
       if (job.generation !== this.generation || model !== this.getModel() || !valid) {
         record.status = "discarded";
-        record.error = "The controller, world, or decision age changed; this response cannot be applied.";
+        record.error = realtime ? freshnessMessage(record.validation) : "The controller or world changed; this response cannot be applied.";
         return null;
       }
       record.ranking = rankDecision(record);
@@ -157,13 +171,14 @@ export class Agent {
     const record = this.current;
     if (this.busy || record?.status !== "scored" || record.mode !== "realtime") throw new Error("Score a real-time observation first.");
     const now = this.engine.snapshot();
-    if (record.generation !== this.generation || this.scoredModel !== this.getModel() || !this.liveValid(now, record)) {
+    record.validation = { phase: "application", ...this.liveCheck(now, record, this.scoredModel) };
+    record.checkedAt = structuredClone(now);
+    if (!record.validation.valid) {
       record.status = "discarded";
-      record.error = "Real-time decision is no longer fresh or owned by this controller.";
+      record.error = freshnessMessage(record.validation);
       this.onChange();
       return false;
     }
-    record.checkedAt = structuredClone(now);
     record.automaticAtApply = automaticPlan(now);
     let choice;
     try { choice = bindAutomatic(record.selected, record.automaticAtApply); }

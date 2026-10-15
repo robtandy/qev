@@ -28,7 +28,7 @@ if (!existsSync(`${source}/.git`)) {
 const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: source, encoding: "utf8" }).stdout.trim();
 if (head !== revision) throw new Error("Unexpected build/qwasm revision; refusing to overwrite another checkout.");
 // Only reset the generated source copy, never a user's fork or the project working tree.
-const patched = ["quakedef.h", "sys_sdl.c", "cl_main.c", "cl_input.c", "host.c", "model.c", "pr_edict.c", "r_main.c", "d_edge.c", "d_polyse.c", "d_sprite.c", "d_part.c", "d_scan.c", "snd_mix.c"];
+const patched = ["quakedef.h", "sys_sdl.c", "cl_main.c", "cl_input.c", "host.c", "model.c", "pr_edict.c", "r_main.c", "d_edge.c", "d_polyse.c", "d_sprite.c", "d_part.c", "d_scan.c", "snd_mix.c", "vid_sdl.c"];
 run("git", ["restore", "--source=HEAD", "--", ...patched.map((f) => `WinQuake/${f}`)], source);
 run("git", ["apply", resolve(root, "engine/qwasm.patch")], source);
 const sourceDate = new Date().toISOString().slice(0, 10);
@@ -48,7 +48,7 @@ const flags = [
   "-sEXIT_RUNTIME=0", "-lidbfs.js",
 ].join(" ");
 const makefile = readFileSync(resolve(source, "WinQuake/Makefile.emscripten"), "utf8")
-  .replace("OBJS := $(SRCS:.c=.o)", `SRCS += qev_bridge.c qev_pixels.c qev_animation.c qev_recenter.c qev_nearest.c\nqev_bridge.o qev_pixels.o qev_animation.o qev_recenter.o qev_nearest.o: CFLAGS += -fno-fast-math -Werror=implicit-function-declaration ${evaluation ? "-Dqev_EVALUATION" : ""}\nOBJS := $(SRCS:.c=.o)`);
+  .replace("OBJS := $(SRCS:.c=.o)", `SRCS += qev_bridge.c qev_pixels.c qev_animation.c qev_recenter.c qev_nearest.c qev_present.c\nqev_bridge.o qev_pixels.o qev_animation.o qev_recenter.o qev_nearest.o qev_present.o: CFLAGS += -fno-fast-math -Werror=implicit-function-declaration ${evaluation ? "-Dqev_EVALUATION" : ""}\nOBJS := $(SRCS:.c=.o)`);
 writeFileSync(resolve(source, "WinQuake/Makefile.qev"), makefile);
 run("bash", ["-c", 'source "$1/emsdk_env.sh" >/dev/null 2>&1; exec make -f Makefile.qev -j4 all "TARGET=$2/qwasm.mjs" "LDFLAGS=$3"', "qev-build", sdk, output, flags], resolve(source, "WinQuake"));
 cpSync(resolve(source, "gnu.txt"), resolve(output, "QWASM-LICENSE.txt"));

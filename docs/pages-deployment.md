@@ -92,7 +92,8 @@ Every browser harness launches and verifies Chrome's **`--mute-audio` before loa
 ordinary visitors retain normal gameplay sound. Set `CHROME_PATH` if Chrome is not at the platform
 default. The static test verifies project-path assets, normal engine capabilities, map 6/Hard startup
 stopped without model downloads, notices/source downloads, one exact native tick, no root-path leaks,
-and no JS exceptions. It also checks native explicit look-up/down release, leveling, priority and
+and no JS exceptions. It checks the compact diagnostics control and passive timing export,
+separate from model observations. It also checks native explicit look-up/down release, leveling, priority and
 Stop/frozen-Step limits. `--recenter` adds the elevated pixel-target recovery fixtures. `--model`
 additionally loads real Laya in its worker and executes a sampled
 frozen Step using the published inventory-aware requests. Test reports/captures stay in ignored

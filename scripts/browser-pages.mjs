@@ -66,7 +66,7 @@ try {
       css:[...document.styleSheets].some(s=>s.href?.endsWith('/style.css')),
       normal:typeof qev.engine.module._qev_evaluation==='undefined',control:qev.engine.module._qev_control_version(),screen:qev.engine.module._qev_screen_version()};})()`);
   assert.equal(info.snapshot.ready, true); assert.equal(info.snapshot.paused, true); assert.equal(info.snapshot.map, "lq_e0m6"); assert.equal(info.snapshot.difficulty, 2);
-  assert.equal(info.normal, true); assert.equal(info.control, 8); assert.equal(info.screen, 4); assert.equal(info.model, false); assert.equal(info.css, true);
+  assert.equal(info.normal, true); assert.equal(info.control, 9); assert.equal(info.screen, 4); assert.equal(info.model, false); assert.equal(info.css, true);
   assert.equal(info.snapshot.version, 5); assert.equal(info.snapshot.controlMode, "visible-assisted");
   assert.equal(new URL(info.logo).pathname, url.pathname + "brand/qev-logo.svg");
   assert.equal(info.title, "qev - quake played by a local decision model"); assert.equal(info.logoLabel, "qev");
@@ -83,12 +83,19 @@ try {
       r.automatic.aim?.ref===s.enemies.find(e=>e.nearest)?.ref && r.automatic.item?.ref===s.pickups.find(e=>e.nearest)?.ref &&
       [...s.enemies,...s.pickups,...s.features].every(e=>typeof e.nearest==='boolean' && !('distance' in e) && !('position' in e));})()`), true);
   console.log("PASS one action question with separate nearest-visible and strongest-loaded automatic binding evidence");
+  assert.equal(await evaluate(`(()=>{const before=qev.engine.snapshot(),d=qev.diagnostics(),after=qev.engine.snapshot();
+    return !document.querySelector('#diagnostics').disabled && d.version===1 && d.native.scope==='engine-lifetime' &&
+      d.native.physicsHz===60 && d.native.hostFrames>0 && d.native.presents>0 && !d.latest.length &&
+      d.limits.maxGameTicks===60 && d.limits.maxWallMs===1500 && after.paused && after.tick===before.tick &&
+      !('hostFrames' in after);})()`), true);
+  console.log("PASS compact diagnostics at the project path are passive and separate from model observations");
   for (const width of [1440, 375]) {
     await call("Emulation.setDeviceMetricsOverride", { width, height: 1100, deviceScaleFactor: 1, mobile: false });
     assert.equal(await evaluate(`(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
       return !document.querySelector('.assistance-setting,#assistance-help-button,#assistance-help-preview,#assistance-help') &&
         !document.querySelector('.setup-row').textContent.includes('How it plays') &&
-        document.documentElement.scrollWidth<=innerWidth && !!document.querySelector('#model') && !!document.querySelector('#step');})()`), true);
+        document.documentElement.scrollWidth<=innerWidth && !!document.querySelector('#model') && !!document.querySelector('#step') &&
+        document.querySelector('#diagnostics').getBoundingClientRect().width>0;})()`), true);
   }
   await call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
   assert.ok(!requests.some(r => new URL(r).pathname.endsWith("/src/assistance-help.js")));

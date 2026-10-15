@@ -10,19 +10,33 @@ import { DEMO, DEMO_MAPS } from "./demo-manifest.js";
 import { loadDemo } from "./demo.js";
 import { SAMPLING_METHOD } from "./sampling.js";
 import { appURL } from "./paths.js";
+import { LiveBudget } from "./live-budget.js";
+import { diagnosticSummary } from "./diagnostics.js";
 
 const $ = (id) => document.getElementById(id);
 const pageTitle = document.title;
 const modelSelected = () => ["laya", "kev-0.8b"].includes($("model").value);
 const modelHint = "Choose a model · selecting downloads it if needed.";
 let engine = null, agent = null, model = null, snapshot = null, respawner = null, stepper = null;
-let operation = "", loadingModel = null, autoToken = 0, auto = false, playMode = "inspection";
+let operation = "", loadingModel = null, autoToken = 0, auto = false, playMode = "inspection", deadlineStop = null;
 let initialPriorityOrder = DEFAULT_PRIORITY_ORDER;
 const currentPriorityOrder = () => agent?.priorityOrder || initialPriorityOrder;
 const engineLines = [];
 let errorTimer;
 const json = (value) => JSON.stringify(value, null, 2);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function downloadJSON(value, name) {
+  const url = URL.createObjectURL(new Blob([json(value)], { type: "application/json" }));
+  const link = document.createElement("a"); link.href = url; link.download = name; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function diagnostics() {
+  let native = null, observation = snapshot;
+  try { observation = engine?.snapshot() ?? snapshot; } catch { /* Keep the last UI observation after an engine error. */ }
+  try { native = engine?.diagnostics() ?? null; } catch { /* Keep export available after an engine error. */ }
+  return diagnosticSummary({ records: agent?.history || [], model: (agent?.getModel() || model)?.info,
+    observation, native, speed: native?.speed ?? Number($("speed").value), stoppedReason: deadlineStop, monotonicNow: performance.now() });
+}
 function log(line) {
   engineLines.push(String(line));
   if (engineLines.length > 150) engineLines.shift();
@@ -76,6 +90,7 @@ function updateControls() {
   $("auto").setAttribute("aria-pressed", String(auto));
   $("map").disabled = $("difficulty").disabled = !engine || !!operation;
   $("export").disabled = !agent?.history.length;
+  $("diagnostics").disabled = !engine;
   $("model").closest(".model-setting").classList.toggle("needs-selection", !modelSelected());
   $("model").disabled = $("backend").disabled = !!loadingModel || !!operation;
   $("cancel-model").hidden = !loadingModel;
@@ -87,11 +102,12 @@ function updateControls() {
   else if (snapshot.remaining) $("status").textContent = `Stepping · ${snapshot.remaining} ticks left. Stop interrupts immediately.`;
   else if (auto) {
     const last = agent.history.findLast((r) => r.mode === "realtime" && r.ms !== null);
-    $("status").textContent = `Running · ${PRIMARY_OBJECTIVE}${last ? ` · ${Math.round(last.ms)} ms / decision` : ""}. Stop to inspect.`;
+    $("status").textContent = `Running · ${PRIMARY_OBJECTIVE}${last ? ` · ${Math.round(last.ms)} ms / decision${last.status === "discarded" ? " · last reply discarded" : ""}` : ""}. Stop to inspect.`;
   }
   else if (loadingModel) $("status").textContent = "Stopped · loading the selected model…";
   else if (agent?.inflight) $("status").textContent = stepper?.busy ? "Choosing one action · world stopped. Stop cancels the step." : "Stopped · waiting for the previous model response to finish.";
   else if (!snapshot.paused) $("status").textContent = "Simulation running · P stops.";
+  else if (deadlineStop) $("status").textContent = "Auto stopped: decisions missed the live deadline. Use Step or Copy diagnostics.";
   else $("status").textContent = hasModel ? "Stopped · Start runs continuously. Step runs one decision." : "Stopped · choose Kev or Laya to load it.";
 }
 function poll() {
@@ -136,20 +152,20 @@ function playFromGesture(fn) {
   return guard(fn);
 }
 async function score() { await agent.score(); }
-async function step() { return stepper.step(); }
+async function step() { deadlineStop = null; return stepper.step(); }
 function promptForModel() {
   $("model-status").textContent = "Choose Kev or Laya above. Selection loads it; then press Start.";
   $("model").focus();
 }
 async function runAuto() {
   if (auto) return;
-  stop();
+  deadlineStop = null; stop();
   if (!(agent?.getModel() || model)) {
     promptForModel();
     return;
   }
   agent.startLive();
-  const token = ++autoToken;
+  const token = ++autoToken, budget = new LiveBudget();
   auto = true; playMode = "auto";
   updateControls();
   try {
@@ -162,6 +178,8 @@ async function runAuto() {
       const record = await agent.score({ realtime: true });
       if (!auto || token !== autoToken) break;
       if (record) agent.applyLive();
+      const missed = budget.observe(agent.current);
+      if (missed) { deadlineStop = missed.message; throw missed; }
       // One request at a time; no queue of obsolete frames. Yield even with an instant test model.
       await sleep(Math.max(0, 120 - (performance.now() - started)));
     }
@@ -170,7 +188,7 @@ async function runAuto() {
 
 async function loadLevel(map, difficulty, message) {
   if (!engine || operation) return;
-  stop(); agent.invalidate(); operation = message; updateControls();
+  deadlineStop = null; stop(); agent.invalidate(); operation = message; updateControls();
   try {
     await engine.loadMap(map, difficulty);
     $("map").value = map; $("difficulty").value = String(difficulty);
@@ -248,7 +266,7 @@ async function loadSelectedModel() {
     $("backend").value = loadingModel.backend;
     return;
   }
-  stop(); agent?.invalidate();
+  deadlineStop = null; stop(); agent?.invalidate();
   const previous = model; model = null;
   $("model-status").title = "";
   if (!modelSelected()) {
@@ -319,9 +337,18 @@ for (const id of ["map", "difficulty"]) $(id).addEventListener("change", () => g
 $("speed").addEventListener("change", () => guard(async () => engine?.speed(Number($("speed").value))));
 $("export").addEventListener("click", () => {
   const priorityOrder = currentPriorityOrder();
-  const url = URL.createObjectURL(new Blob([json({ version: 15, samplingMethod: SAMPLING_METHOD, controlMode: CONTROL_MODE, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), memory: agent.observations.describe(snapshot), observationPolicy: OBSERVATION_POLICY, controller: CONTROLLER_POLICY, records: agent.history })], { type: "application/json" }));
-  const link = document.createElement("a"); link.href = url; link.download = "qev-trace.json"; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadJSON({ version: 16, samplingMethod: SAMPLING_METHOD, controlMode: CONTROL_MODE, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), memory: agent.observations.describe(snapshot), observationPolicy: OBSERVATION_POLICY, controller: CONTROLLER_POLICY, diagnostics: diagnostics(), records: agent.history }, "qev-trace.json");
+});
+$("diagnostics").addEventListener("click", async () => {
+  const value = diagnostics();
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+    await navigator.clipboard.writeText(json(value));
+    $("diagnostics-status").textContent = "Diagnostic summary copied.";
+  } catch {
+    downloadJSON(value, "qev-diagnostics.json");
+    $("diagnostics-status").textContent = "Diagnostic summary downloaded (clipboard unavailable).";
+  }
 });
 addEventListener("keydown", (event) => {
   if (event.target.closest("input, select, textarea, button, summary, a") || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -344,5 +371,5 @@ $("model").value = "";
 renderDecision();
 fitGame();
 // Diagnostic handles, not an externally supported API. Tests use the same engine/agent as the UI.
-window.qev = { get engine() { return engine; }, get agent() { return agent; }, get model() { return model; }, get respawner() { return respawner; }, get playMode() { return playMode; }, get controlMode() { return CONTROL_MODE; }, get priorityOrder() { return currentPriorityOrder(); }, get engineLog() { return engineLines.slice(); }, pause: stop, score, step };
+window.qev = { get engine() { return engine; }, get agent() { return agent; }, get model() { return model; }, get respawner() { return respawner; }, get playMode() { return playMode; }, get controlMode() { return CONTROL_MODE; }, get priorityOrder() { return currentPriorityOrder(); }, get engineLog() { return engineLines.slice(); }, diagnostics, pause: stop, score, step };
 void guard(startDemo);

@@ -16,7 +16,7 @@ export async function verifyPageEngine(root) {
   if (build.evaluationOnly !== false || build.assetsEmbedded !== false) throw new Error("Pages requires the normal, asset-free engine, never the evaluation build.");
   if (build.sourceDigest !== await engineSourceDigest(root)) throw new Error("Engine/source mismatch. Run npm run build:engine before publishing Pages.");
   const exports = WebAssembly.Module.exports(await WebAssembly.compile(await readFile(resolve(root, "build/engine/qwasm.wasm")))).map(e => e.name.replace(/^_/, ""));
-  if (exports.includes("qev_evaluation") || !["qev_snapshot", "qev_command", "qev_control_version"].every(name => exports.includes(name))) throw new Error("Invalid or instrumented engine cannot be published.");
+  if (exports.includes("qev_evaluation") || !["qev_snapshot", "qev_command", "qev_control_version", "qev_diagnostics"].every(name => exports.includes(name))) throw new Error("Invalid or instrumented engine cannot be published.");
   return build;
 }
 async function copyFile(source, destination) {

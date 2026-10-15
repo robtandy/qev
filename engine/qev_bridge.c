@@ -8,6 +8,7 @@
 #include "d_local.h"
 #include "qev_recenter.h"
 #include "qev_nearest.h"
+#include "qev_present.h"
 #include <stdint.h>
 #include <limits.h>
 #include <emscripten/emscripten.h>
@@ -27,6 +28,7 @@ static int remaining, lease, selected_ref, firing, jumping, selected_weapon, mel
 static int control_session, action_serial, action_ticks, weapon_presses, melee_approach_ticks;
 static int body_moving, motion_requested, no_movement_ticks;
 static qev_recenter_t view_recovery;
+static qev_present_t presentation; /* Engine-lifetime timings; NEVER model input. */
 static float input_forward, input_side, input_up, input_yaw_rate, input_pitch_rate;
 static float speed_scale = 1;
 static double last_wall, accumulator, lease_deadline;
@@ -145,7 +147,21 @@ static int view_available(void) {
         scr_con_current <= 0 && scr_centertime_off <= 0 && !sb_showscores && !cl.paused && !scr_drawloading && !scr_drawdialog;
 }
 EMSCRIPTEN_KEEPALIVE int qev_screen_version(void) { return 4; }
-EMSCRIPTEN_KEEPALIVE int qev_control_version(void) { return 8; }
+EMSCRIPTEN_KEEPALIVE int qev_control_version(void) { return 9; }
+int qev_DeferVideo(void) { return qev_PresentDefer(&presentation); }
+void qev_VideoPresented(double ms) { qev_PresentDone(&presentation, ms); }
+EMSCRIPTEN_KEEPALIVE const char *qev_diagnostics(void) {
+    static char report[1024];
+    snprintf(report, sizeof(report), "{\"version\":1,\"scope\":\"engine-lifetime\",\"physicsHz\":60,\"speed\":%.3f,"
+        "\"hostFrames\":%llu,\"presents\":%llu,\"deferred\":%llu,\"loops\":%llu,\"invalidTimes\":%llu,"
+        "\"hostMs\":%.3f,\"presentMs\":%.3f,\"loopMs\":%.3f,\"maxHostMs\":%.3f,\"maxPresentMs\":%.3f,\"maxLoopMs\":%.3f,"
+        "\"lastBatchFrames\":%u,\"maxBatchFrames\":%u}", (double)speed_scale,
+        (unsigned long long)presentation.host_frames, (unsigned long long)presentation.presents,
+        (unsigned long long)presentation.deferred, (unsigned long long)presentation.loops, (unsigned long long)presentation.invalid_times,
+        presentation.host_ms, presentation.present_ms, presentation.loop_ms, presentation.max_host_ms, presentation.max_present_ms, presentation.max_loop_ms,
+        presentation.last_frames, presentation.max_frames);
+    return report;
+}
 EMSCRIPTEN_KEEPALIVE void qev_audio_access(int enabled) { audio_access = enabled == 1; }
 void qev_BeginView(int unsupported) {
     qev_PixelsReset(); view_tick = -1; memset(view_nearest, 0, sizeof(view_nearest));
@@ -533,12 +549,20 @@ void qev_MainLoop(void) {
     if (!paused && owned && lease > 0 && lease_deadline > 0 && wall >= lease_deadline) cancel_action("Action wall-time watchdog expired.");
     if (ready() && !booting && paused && remaining == 0) { accumulator = 0; Sys_SendKeyEvents(); return; }
     accumulator += fmin(fmax(elapsed, 0), 0.1) * (booting ? 1 : speed_scale);
+    /* Every physics/render/pixel-attribution tick still runs. Multiple texture
+     * uploads in one callback cannot be composited separately by the browser.
+     * Defer only those uploads, then flush the latest framebuffer even if the
+     * loop exits early for a Step, death, loading or an epoch transition. */
+    qev_PresentBegin(&presentation, accumulator >= 2 * qev_DT);
     while (accumulator >= qev_DT && n++ < 6) {
         int before_epoch = epoch, was_ready = ready(); vec3_t before;
         if (was_ready) VectorCopy(player()->v.origin, before);
         accumulator -= qev_DT; if (owned) key_dest = key_game;
         motion_requested = 0;
-        Host_Frame(qev_DT); if (!ready()) continue;
+        double frame_started = Sys_FloatTime();
+        Host_Frame(qev_DT);
+        qev_PresentHost(&presentation, (Sys_FloatTime() - frame_started) * 1000);
+        if (!ready()) continue;
         tick++;
         if (booting) { booting = 0; qev_pause(); break; }
         if (epoch != before_epoch) break;
@@ -566,4 +590,6 @@ void qev_MainLoop(void) {
         if (remaining > 0 && --remaining == 0) { qev_pause(); break; }
         if (paused && remaining == 0) { qev_pause(); break; }
     }
+    if (qev_PresentFlush(&presentation)) qev_FlushVideo();
+    qev_PresentLoop(&presentation, (Sys_FloatTime() - wall) * 1000);
 }

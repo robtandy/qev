@@ -60,7 +60,8 @@
         <p id="priority-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
       </aside>
       <aside class="inspector" aria-label="Decision inspector">
-        <div class="inspector-head"><div><h2>Decisions</h2><p class="small muted">Last 5 · newest first</p></div><button id="export" disabled>Export trace</button></div>
+        <div class="inspector-head"><div><h2>Decisions</h2><p class="small muted">Last 5 · newest first</p></div><div class="inspector-tools"><button id="diagnostics" title="Copy a small performance and rejection summary, without the full trace" disabled>Copy diagnostics</button><button id="export" disabled>Export trace</button></div></div>
+        <p id="diagnostics-status" class="sr-only" role="status" aria-live="polite"></p>
         <ol id="decisions" aria-label="Latest five decisions, newest first"><li class="empty">Choose a model above to load it, then Start or Step. Decisions will appear here.</li></ol>
       </aside>
     </section>

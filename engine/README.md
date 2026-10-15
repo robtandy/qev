@@ -1,6 +1,6 @@
 # Qwasm integration source
 
-qev's engine bridge, visible-pixel reducer, animation annotations, camera recovery, nearest-visible selector and the modifications in `qwasm.patch` are provided under the
+qev's engine bridge, visible-pixel reducer, animation annotations, camera recovery, nearest-visible selector, presentation bookkeeping and the modifications in `qwasm.patch` are provided under the
 **GNU General Public License, version 2 or (at your option) any later version**,
 consistent with the Quake/Qwasm engine. They are provided without warranty.
 [`COPYING`](COPYING) is the license text copied verbatim from the pinned Qwasm source.
@@ -21,7 +21,9 @@ upstream `WinQuake` files. Six renderer hooks (`r_main`, `d_edge`, `d_polyse`, `
 `d_part`, `d_scan`) attribute actually drawn pixels, including occlusion and water warp.
 A thirteenth file, `snd_mix`, captures nonzero spatialized sound-channel amplitudes.
 A fourteenth, `model`, associates alias assets with content-fingerprinted animation metadata
-at load time; it changes no asset bytes, physics, damage or gamecode.
+at load time; it changes no asset bytes, physics, damage or gamecode. A fifteenth, `vid_sdl`,
+coalesces redundant SDL conversions/uploads in a catch-up callback and presents the final
+complete framebuffer. Every software render and physics/pixel-attribution step still runs.
 
 `qev_bridge.c/h` implement one visible-assisted controller: HUD/inventory, renderer/mixer
 labels, bounded relative commands, visible-pixel aiming, jump/weapon presses, fixed ticks,
@@ -48,7 +50,12 @@ non-fallen enemy / pickup candidates. The bridge gates all placement reads on fi
 pixels, uses current rendered model-bound centers, retains the winner in each capped list,
 and exports only a `nearest` boolean. No coordinates/ranges enter JavaScript/model inputs.
 This user-approved binding assistance is distinct from pixel-only aiming and never queries
-hidden health, route/LOS or hypothetical outcomes. The build adds all five modules without embedding assets.
+hidden health, route/LOS or hypothetical outcomes.
+`qev_present.c/h` track deferred presentation and engine-lifetime elapsed timing/frame counters.
+Early exits still flush the final framebuffer, including HUD/palette changes. This helper has
+no game/world state and cannot skip simulation/rendering calls. `qev_diagnostics()` exports its
+bookkeeping separately from model observations, not as a GPU/FPS or gameplay-quality measure.
+The build adds all six modules without embedding assets.
 See [weapon/death awareness and provenance](../docs/weapon-and-death-awareness.md).
 
 The Git repository contains integration source, not compiled engines or game assets.

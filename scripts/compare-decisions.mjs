@@ -25,6 +25,7 @@ export function summarizeTrial(report) {
 // Serialized into the real browser. Do not close over Node variables.
 async function runTrial(map, format, durationMs) {
   const { Agent } = await import("/src/agent.js");
+  const { LiveBudget } = await import("/src/live-budget.js"), budget = new LiveBudget();
   qev.pause(); qev.agent.invalidate();
   const engine = qev.engine; await engine.loadMap(map); engine.speed(1);
   const retryDeaths = qev.respawner.enabled; qev.respawner.enabled = false;
@@ -41,7 +42,9 @@ async function runTrial(map, format, durationMs) {
       agent.observeLive(engine.snapshot()); const now = engine.snapshot();
       if (!now.ready || !now.alive || now.completed || now.paused || now.controlSession !== agent.liveSession) break;
       const began = performance.now(), record = await agent.score({ realtime: true });
-      if (record && performance.now() - started < durationMs && agent.liveSession !== null) agent.applyLive();
+      if (performance.now() - started >= durationMs || agent.liveSession === null) break;
+      if (record) agent.applyLive();
+      const missed = budget.observe(agent.current); if (missed) throw missed;
       await new Promise(r => setTimeout(r, Math.max(0, 120 - (performance.now() - began))));
     }
   } catch (failure) { error = failure.message; }

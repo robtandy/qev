@@ -409,3 +409,32 @@ index 22d75f4..7522030 100644
          // find time spent rendering last frame
          newtime = Sys_FloatTime ();
          time = newtime - oldtime;
+diff --git a/WinQuake/vid_sdl.c b/WinQuake/vid_sdl.c
+index 4bbaacf..5449083 100644
+--- a/WinQuake/vid_sdl.c
++++ b/WinQuake/vid_sdl.c
+@@ -465,6 +465,8 @@ void    VID_Update (vrect_t *rects)
+     void* rgb_pixels;
+     int rgb_pitch;
+ 
++    if (qev_DeferVideo()) return;
++    double started = Sys_FloatTime();
+     if (SDL_LockTexture(texture, NULL, &rgb_pixels, &rgb_pitch) < 0)
+         Sys_Error("VID: Couldn't lock texture: %s\n", SDL_GetError());
+ 
+@@ -490,6 +492,15 @@ void    VID_Update (vrect_t *rects)
+         Sys_Error("VID: Couldn't render texture: %s\n", SDL_GetError());
+ 
+     SDL_RenderPresent(renderer);
++    qev_VideoPresented((Sys_FloatTime() - started) * 1000);
++}
++
++/* Flush only the last framebuffer in a catch-up callback. Earlier dirty rects
++ * may include HUD/palette updates, so convert the full current buffer once. */
++void qev_FlushVideo(void)
++{
++    force_entire_redraw = true;
++    VID_Update(NULL);
+ }
+ 
+ /*

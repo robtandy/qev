@@ -82,6 +82,18 @@ Five decision cards expose exact requests, responses and outcomes. Labels are no
 recognition, and perception/navigation remain limited. The model can make poor choices or
 get stuck; this is not human-equivalent play or a survival benchmark.
 
+### If Auto is too slow
+
+Live answers must arrive within **60 game ticks** (about 1 second at 1×) **and 1,500 wall ms**.
+After three consecutive deadline misses, Auto stops with an explanation rather than retrying
+indefinitely. **Step** keeps the world frozen during inference. **Copy diagnostics**, beside
+Export trace, produces a small timing/rejection report instead of the full trace's repeated payloads.
+Lower Speed does not extend the wall deadline.
+
+The worker now starts before inspector rendering, and catch-up callbacks upload only their final
+frame while retaining every physics/render step. Neither change establishes a Pixel speedup.
+See [mobile performance, diagnostics and validation](docs/mobile-performance.md).
+
 ### Validate gameplay, not just commands
 
 ```sh

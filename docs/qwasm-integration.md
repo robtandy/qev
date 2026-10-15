@@ -12,6 +12,7 @@ API and [state-and-actions.md](state-and-actions.md) for the single-controller p
 | --- | --- |
 | `WinQuake/Makefile.emscripten` | Software renderer + SDL2; qev removes upstream asset preloading and builds a modular ES module |
 | `sys_sdl.c` | Replace wall-time `Host_Frame` calls with the fixed 60 Hz bridge scheduler |
+| `vid_sdl.c` | Coalesce redundant catch-up SDL conversions/uploads; present the complete final frame, including palette/HUD updates |
 | `host.c` | Avoid ordinary time filtering/minimum deltas while qev owns input; don't call extra stopped frames/RNG |
 | `cl_main.c` | Gather only the input owned by the controller before sending a normal client command |
 | `cl_input.c` | Movement is in `usercmd_t`; angles are in `cl.viewangles`; attack/jump and weapon impulses are serialized separately |
@@ -40,6 +41,10 @@ The ordinary host loop filters very small frame deltas and has RNG calls outside
 qev must not simulate pause by repeatedly calling frames and merely suppressing input. The
 fixed scheduler freezes world calls completely, resumes without accumulated wall-clock catch-up,
 and scales pacing rather than changing physics step size. UI/key events still run while stopped.
+The pure `qev_present.c/h` helper defers only redundant video uploads in a multi-tick browser
+callback; every host/software-render/visible-pixel step still runs. Early exits flush the latest
+framebuffer. Passive `qev_diagnostics()` counters/timings are separate from observations and never
+enter model input. See [mobile performance](mobile-performance.md) for boundaries and tests.
 
 Standard Quake serializes the active-weapon HUD value as one byte (`sv_main.c` /
 `cl_parse.c`), unlike the full inventory bitmask. The axe's inventory bit 4096 therefore arrives

@@ -14,6 +14,7 @@ import { checkController, runPlayerTrial } from "./browser-controller.mjs";
 import { checkRecenter } from "./browser-recenter.mjs";
 import { checkScreen, checkScreenModel } from "./browser-screen.mjs";
 import { checkReset } from "./browser-reset.mjs";
+import { checkPerformance } from "./browser-performance.mjs";
 import { replies as fixtureReplies, decisionReplies as fixtureDecisionReplies } from "../tests/replies.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -661,6 +662,11 @@ try {
     return qev.engine.snapshot().paused && qev.engine.snapshot().tick===tick && qev.playMode==='inspection' && document.querySelector('#auto').getAttribute('aria-pressed')==='false';
   `);
   await evaluate("(async()=>{qev.agent.invalidate();await qev.engine.loadMap('qev_encounter',0);document.querySelector('#map').value='qev_encounter';document.querySelector('#difficulty').value='0';})()");
+  const performanceFixture = await checkPerformance({ evaluate, check, until, captureGame: async () => {
+    const clip = await evaluate("(()=>{const r=document.querySelector('#game').getBoundingClientRect();return{x:r.x+scrollX,y:r.y+scrollY,width:r.width,height:r.height,scale:1}})()");
+    return (await call('Page.captureScreenshot', { format:'png',clip })).data;
+  } });
+  await writeFile(resolve(root, 'build/performance-native.json'), JSON.stringify(performanceFixture, null, 2));
   if (runModel) {
     await evaluate("qev.agent.getModel = originalModel; qev.agent.invalidate()");
     await until(()=>evaluate("!document.querySelector('#model').disabled"));

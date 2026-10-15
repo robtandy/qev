@@ -20,7 +20,7 @@ export async function checkScreen({ evaluate, check, until, pressKeys }) {
       const s=qev.engine.snapshot();screenTest.first=s;const m=qev.engine.module;
       if(!s.screen.available || !s.enemies.length)throw new Error(JSON.stringify(s));
       await new Promise(r=>setTimeout(r,120));const now=qev.engine.snapshot();
-      return s.version===5 && s.controlMode==='visible-assisted' && m._qev_screen_version()===4 && m._qev_control_version()===8 &&
+      return s.version===5 && s.controlMode==='visible-assisted' && m._qev_screen_version()===4 && m._qev_control_version()===9 &&
         ['_qev_evaluation','_qev_assistance','_qev_probe','_qev_action','_qev_live_action','_qev_input_action','_qev_live_input'].every(k=>!(k in m)) &&
         !('position' in s.player) && !('yaw' in s.player) && !('pitch' in s.player) && !qev.engine.probe && !qev.engine.setAssistance &&
         s.screen.source==='renderer-visible-pixels' && s.screen.tick===s.tick && s.screen.viewport.join(',')==='0,0,640,432' &&

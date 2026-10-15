@@ -71,7 +71,8 @@ Pitch recovery, movement limits, normal damage/weapons, native ammo fallback and
 are unchanged. Engagement still adds advance only while the actual HUD weapon is the axe;
 stationary and raw attacks do not gain movement.
 
-Trace **15**, snapshot **5**, screen capability **4**, control capability **8**:
+Current trace **16**, snapshot **5**, screen capability **4**, control capability **9**
+(the original automatic-binding release used trace 15/control 8):
 
 - `requests` / `responses`: actual single action question and unchanged SDK reply/extras.
 - `sampling.heads.action`: full original distribution's replayable draw, interval and SDK choice.
@@ -86,6 +87,10 @@ an explicit diagnostic with per-tactic ratings; it uses the same automatic bindi
 questions/draws, and is never an automatic fallback.
 
 ## Validation and performance limits
+
+The measurements below are from the initial automatic-binding release. Subsequent deadline
+handling, dispatch/presentation optimizations and compact diagnostics are documented separately
+in [mobile performance](mobile-performance.md); neither set is a Pixel benchmark.
 
 - Native nearest-selector tests use ASan/UBSan, including hidden/unreadable coordinates,
   3D ordering, ties, invalid numbers and frame reset. Integration tests check the final-pixel
@@ -109,4 +114,5 @@ questions/draws, and is never an automatic fallback.
 Reducing up to four independently scored questions to one reduces inference work **per decision**.
 The live loop may consequently make decisions more often; overall GPU utilization need not fall. It does not
 establish a particular latency multiplier or prove that Pixel rendering is now smooth. No
-resolution, physics, rendering cadence, decision-age guard or pinned Kevala dependency was changed.
+resolution, physics, rendering cadence, decision-age guard or pinned Kevala dependency was changed
+by the automatic-binding simplification.

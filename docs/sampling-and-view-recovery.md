@@ -102,8 +102,8 @@ counter change in that record's window, **not extra action ticks, movement or hi
 may finish before all idle cleanup does; later snapshots retain the cumulative count. World
 changes/absent counters abstain rather than inventing a cross-epoch execution delta.
 
-The normal engine now requires screen capability **4**, control capability **8**. Snapshot
-schema is **5**; trace export is **15**. Rebuild the engine and reload the app/reselect the
+The normal engine now requires screen capability **4**, control capability **9**. Snapshot
+schema is **5**; trace export is **16**. Rebuild the engine and reload the app/reselect the
 model so old code cannot silently retain the earlier behavior.
 
 ## Validation boundary

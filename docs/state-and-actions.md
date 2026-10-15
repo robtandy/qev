@@ -125,11 +125,14 @@ same-epoch window separately from action ticks; cleanup may outlast a record's a
 - Live uses one asynchronous request, advancing world time and a 45-tick / 750-game-ms lease.
 - Reject changed epoch/session/model/priority or age >60 ticks / 1.5 wall seconds. A separate
   native wall watchdog releases inputs even when simulation is slow; cleanup cannot extend them.
+  Three consecutive age-only misses stop Auto; Step remains frozen during inference. Exact
+  reply/application failures and separate native CPU-side timings appear in **Copy diagnostics**,
+  never in model inputs. See [mobile performance](mobile-performance.md).
 - Stop/Reset/transitions/focus loss/death/completion invalidate obsolete work. Reset preserves
   model/settings/history while restarting the actual map/skill, stopped.
 - Memory records actual observations/outcomes; zero-input commands create no experience.
   HUD changes describe a time interval, not guaranteed causality from the selected action.
-- Trace **15**, snapshot **5**, screen capability **4**, control capability **8** make the new
+- Trace **16**, snapshot **5**, screen capability **4**, control capability **9** make the new
   boundary explicit. Old native builds are rejected, not silently reused.
 - Evaluation-only aggregate motion telemetry never enters model inputs or the normal build.
   Browser harnesses launch **and verify `--mute-audio` before loading the app**; visitors retain sound.

@@ -13,8 +13,10 @@ visible selector may compare object distance; positions/ranges never enter the m
 no tactical reweighting, rejected-draw retry, hidden target or scripted tactic.
 
 The sustained results below are **historical policies**, not rerun or relabeled as current results.
-The new policy has passed real-engine/real-Laya smoke checks and one illustrative 12-second Hard
-map-6 episode (73 applications, 2 scoreboard kills, alive at 42 health). That is not the minute-long
+Initial automatic-binding validation passed real-engine/real-Laya smoke checks and an illustrative
+12-second Hard map-6 episode (73 applications, 2 scoreboard kills, alive at 42 health). Subsequent
+[mobile-performance work](mobile-performance.md) has separate native/mocked/desktop checks, not
+Pixel measurements or a new sustained-play gate. The short episode is not the minute-long
 gate, a matched comparison or proof of improved survival. The sustained six-run gate has **not**
 been rerun for automatic bindings. No reported gameplay run used God mode, extra health/ammo or
 reduced skill. Native fixtures and synthetic token-budget checks are reported separately.

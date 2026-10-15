@@ -192,5 +192,5 @@ level progress only: they do not prove that this target died or attribute every 
   input/renderer fixture, not a model-controlled pickup or a skill benchmark.
 
 All browser checks launch and verify `--mute-audio` before the app loads. Normal gameplay still
-supports sound. The normal engine requires screen capability **4**, control capability **8**;
-exported traces are version **15**. Reload the app after rebuilding the engine.
+supports sound. The normal engine requires screen capability **4**, control capability **9**;
+exported traces are version **16**. Reload the app after rebuilding the engine.

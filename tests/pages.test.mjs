@@ -48,11 +48,14 @@ test("Pages rejects stale, embedded-asset and evaluation engines, including a mi
   const temp = await temporary(t);
   for (const path of ENGINE_INPUTS) { const target = join(temp, path); await mkdir(dirname(target), { recursive: true }); await cp(resolve(root, path), target); }
   await mkdir(join(temp, "build/engine"), { recursive: true });
-  const names = ["qev_snapshot", "qev_command", "qev_control_version"];
+  const names = ["qev_snapshot", "qev_command", "qev_control_version", "qev_diagnostics"];
   await writeFile(join(temp, "build/engine/qwasm.wasm"), fakeExports(names));
   const good = { evaluationOnly: false, assetsEmbedded: false, sourceDigest: await engineSourceDigest(temp) };
   const metadata = async value => writeFile(join(temp, "build/engine/build.json"), JSON.stringify(value));
   await metadata(good); assert.deepEqual(await verifyPageEngine(temp), good);
+  await writeFile(join(temp, "build/engine/qwasm.wasm"), fakeExports(names.filter(n => n !== "qev_diagnostics")));
+  await assert.rejects(verifyPageEngine(temp), /Invalid/);
+  await writeFile(join(temp, "build/engine/qwasm.wasm"), fakeExports(names));
   await metadata({ ...good, evaluationOnly: true }); await assert.rejects(verifyPageEngine(temp), /normal, asset-free/);
   await metadata({ ...good, assetsEmbedded: true }); await assert.rejects(verifyPageEngine(temp), /normal, asset-free/);
   await metadata({ ...good, sourceDigest: "0".repeat(64) }); await assert.rejects(verifyPageEngine(temp), /mismatch/);
