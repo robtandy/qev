@@ -75,6 +75,16 @@ try {
   if (options.url) assert.equal(info.meta.dirty, false, "Publish committed source, not a modified working tree");
   assert.ok(!requests.some(r => r.startsWith("https://huggingface.co/")), "Startup must not download a model");
   console.log("PASS static project-path startup: CSS/logo, verified demo, normal engine, map 6/Hard, stopped without model downloads");
+  for (const width of [1440, 375]) {
+    await call("Emulation.setDeviceMetricsOverride", { width, height: 1100, deviceScaleFactor: 1, mobile: false });
+    assert.equal(await evaluate(`(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+      return !document.querySelector('.assistance-setting,#assistance-help-button,#assistance-help-preview,#assistance-help') &&
+        !document.querySelector('.setup-row').textContent.includes('How it plays') &&
+        document.documentElement.scrollWidth<=innerWidth && !!document.querySelector('#model') && !!document.querySelector('#step');})()`), true);
+  }
+  await call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
+  assert.ok(!requests.some(r => new URL(r).pathname.endsWith("/src/assistance-help.js")));
+  console.log("PASS desktop/mobile setup has no question-mark widget or orphaned popup, and retains game controls without horizontal overflow");
   for (const path of ["licenses.html", "demo/NOTICE.txt", "engine/QWASM-LICENSE.txt", "vendor/kevala/LICENSE", "licenses/SDL2.txt", "licenses/EMSCRIPTEN.txt",
     "sources/manifest.json", "sources/qev-engine.tar.gz", "sources/librequake-code.tar.gz", "sources/pop-generator.tar.gz"]) {
     const status = await evaluate(`(async()=>{const r=await fetch(new URL(${JSON.stringify(path)},location.href),{method:'HEAD'});return r.status;})()`);

@@ -1,46 +1,30 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
-import { readFileSync } from 'node:fs';
-import { helpPlacement } from '../src/assistance-help.js';
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFileSync, existsSync } from "node:fs";
+import { CONTROLLER_POLICY, OBSERVATION_POLICY } from "../src/control.js";
+const source = path => readFileSync(new URL(path, import.meta.url), "utf8");
 
-test('help preview normally sits below its trigger without covering it', () => {
-  assert.deepEqual(helpPlacement({ left: 300, top: 60, bottom: 84 }, { width: 420, height: 500 }, { width: 1366, height: 768 }),
-    { left: 300, top: 90, maxHeight: 670 });
+test("setup no longer includes the explanation question mark, label, preview or modal", () => {
+  const html = source("../public/index.html");
+  assert.doesNotMatch(html, /assistance-setting|assistance-help|help-button|data-help-|How it plays/);
+  assert.doesNotMatch(source("../public/style.css"), /assistance-setting|help-button|help-preview|help-dialog|help-modal-open/);
+  for (const id of ["map", "difficulty", "model", "backend", "auto", "pause", "step", "reset"]) assert.ok(html.includes(`id="${id}"`), id);
 });
-test('help preview moves left at the viewport edge', () => {
-  const p = helpPlacement({ left: 1320, top: 60, bottom: 84 }, { width: 420, height: 500 }, { width: 1366, height: 768 });
-  assert.equal(p.left, 938); assert.equal(p.top, 90);
+
+test("startup and game shortcuts have no dependency on the removed help widget", () => {
+  const app = source("../src/app.js");
+  assert.doesNotMatch(app, /AssistanceHelp|assistanceHelp|assistance-help/);
+  assert.equal(existsSync(new URL("../src/assistance-help.js", import.meta.url)), false);
+  assert.match(app, /event.code === "KeyP"/);
+  assert.match(app, /event.code === "Escape"/);
+  assert.match(app, /event.code === "KeyN"/);
 });
-test('help preview flips above a low trigger', () => {
-  const p = helpPlacement({ left: 300, top: 650, bottom: 674 }, { width: 420, height: 500 }, { width: 1366, height: 768 });
-  assert.equal(p.top, 144); assert.equal(p.maxHeight, 636);
-});
-test('help preview uses a scrollable bounded area in short and narrow viewports', () => {
-  for (const viewport of [{ width: 320, height: 740 }, { width: 320, height: 320 }, { width: 640, height: 360 }]) {
-    const anchor = { left: viewport.width - 32, top: 150, bottom: 174 }, size = { width: Math.min(420, viewport.width - 16), height: 550 };
-    const p = helpPlacement(anchor, size, viewport), bottom = p.top + Math.min(size.height, p.maxHeight);
-    assert.ok(p.left >= 8 && p.left + size.width <= viewport.width - 8);
-    assert.ok(p.top >= 8 && bottom <= viewport.height - 8);
-    assert.ok(bottom <= anchor.top - 6 || p.top >= anchor.bottom + 6);
-  }
-});
-test('the single-controller explanation is authored once and describes its purpose and limits', () => {
-  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
-  assert.match(html, /<span>How it plays<\/span><button id="assistance-help-button"/);
-  assert.doesNotMatch(html, /<select id="assistance"/);
-  assert.match(html, /id="assistance-help-button"[^>]*type="button"[^>]*aria-haspopup="dialog"[^>]*aria-controls="assistance-help assistance-help-preview"/);
-  assert.match(html, /<span aria-hidden="true">\?<\/span>/);
-  const dialog = html.match(/<dialog id="assistance-help"[\s\S]*?<\/dialog>/)[0];
-  assert.match(dialog, /aria-labelledby="assistance-help-title" aria-describedby="assistance-help-intro"/);
-  assert.match(dialog, /Assistance is OK here/);
-  assert.match(dialog, /testing the model’s decisions, not its ability to execute/);
-  assert.match(dialog, /player-observable information/);
-  assert.match(dialog, /never picks the nearest enemy, checks hidden routes, vetoes danger/);
-  assert.match(dialog, /not RGB\/audio recognition/);
-  assert.match(dialog, /There is no privileged legacy mode/);
-  assert.match(dialog, /silently replaces the chosen action/);
-  assert.match(dialog, /does not track through walls/);
-  assert.match(dialog, /memory are bounded/);
-  assert.equal((html.match(/Assistance is OK here/g) || []).length, 1);
-  assert.match(html, /id="assistance-help-preview"[^>]*aria-modal="false"[^>]*hidden/);
+
+test("removing the help control preserves controller disclosures in documentation and traces", () => {
+  assert.match(source("../README.md"), /How it works/);
+  assert.match(source("../README.md"), /control policy and perception limits/);
+  assert.match(source("../src/app.js"), /observationPolicy: OBSERVATION_POLICY, controller: CONTROLLER_POLICY/);
+  assert.match(CONTROLLER_POLICY, /full public probability distribution/);
+  assert.match(CONTROLLER_POLICY, /explicit model look-up\/down/);
+  assert.match(OBSERVATION_POLICY, /Not RGB\/audio recognition/);
 });

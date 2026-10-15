@@ -6,7 +6,6 @@ import { Stepper } from "./stepper.js";
 import { PRIMARY_OBJECTIVE, DEFAULT_PRIORITY_ORDER, validatePriorityOrder, objectivesFor } from "./objective.js";
 import { Priorities } from "./priorities.js";
 import { CONTROL_MODE, OBSERVATION_POLICY, CONTROLLER_POLICY } from "./control.js";
-import { AssistanceHelp } from "./assistance-help.js";
 import { DEMO, DEMO_MAPS } from "./demo-manifest.js";
 import { loadDemo } from "./demo.js";
 import { SAMPLING_METHOD } from "./sampling.js";
@@ -34,7 +33,6 @@ function showError(error) {
   clearTimeout(errorTimer);
   errorTimer = setTimeout(() => { $("error").hidden = true; }, 12_000);
 }
-const assistanceHelp = new AssistanceHelp({ button: $("assistance-help-button"), preview: $("assistance-help-preview"), dialog: $("assistance-help"), onOpen: stop });
 const decisionCards = new DecisionCards($("decisions"), { onError: showError });
 const priorityPanel = new Priorities($("priorities"), { getOrder: currentPriorityOrder,
   onChange: order => guard(() => setPriorities(order)), resetButton: $("reset-priorities"), announcement: $("priority-status") });
@@ -326,7 +324,6 @@ $("export").addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 addEventListener("keydown", (event) => {
-  if (assistanceHelp.modalOpen) return;
   if (event.target.closest("input, select, textarea, button, summary, a") || event.ctrlKey || event.metaKey || event.altKey) return;
   let button;
   if (event.code === "KeyP" || event.code === "Escape") button = $("pause");

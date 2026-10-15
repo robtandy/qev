@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -10,7 +10,9 @@ test("all tracked project-name references use the canonical lowercase spelling",
   const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
   const invalid = [];
   for (const file of files) {
-    const bytes = readFileSync(resolve(root, file));
+    const path = resolve(root, file);
+    if (!existsSync(path)) continue; // Unstaged deletions may still be in the Git index.
+    const bytes = readFileSync(path);
     if (bytes.includes(0)) continue;
     for (const match of bytes.toString("utf8").matchAll(new RegExp(brand, "gi"))) if (match[0] !== brand) invalid.push(`${file}:${match.index}`);
   }

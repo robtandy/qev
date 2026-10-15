@@ -21,7 +21,7 @@ npm run serve
 Open **http://127.0.0.1:8090/**. Choose **Kev** or **Laya** to load it, then **Start**.
 **Stop** freezes the world; **Step** runs one decision; **Reset** restarts the current level stopped,
 keeping the model and settings. Gameplay has sound. The default is map 6 on Hard.
-Hover or click **How it plays ?** for the control policy and perception limits.
+See [How it works](#how-it-works) for the control policy and perception limits; the same policy is included in exported traces.
 
 Setup downloads verified LibreQuake assets and the toolchain into ignored `build/`.
 The Git repository contains no game files, model weights, or compiled engine. The Pages site

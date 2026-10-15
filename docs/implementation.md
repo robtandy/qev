@@ -97,7 +97,7 @@ ticks or 1.5 seconds; native application rechecks epoch, session and tick age. A
 replacement does not become a different action; the previous bounded command may continue.
 
 Stop, focus/tab loss, model/backend/priority changes, map/difficulty changes, Reset, death,
-completion and deliberate help-modal opening prevent obsolete replies from restarting play.
+and completion prevent obsolete replies from restarting play.
 A same-map teleport cancels input, advances epoch and can start a new neutral Auto session.
 Own-player displacement supplies this lifecycle guard and binary own-body motion feedback:
 moving/stationary and the duration of actual attempted movement without translation. No position,
@@ -270,8 +270,9 @@ Late/cancelled loads cannot install themselves or overlap another job.
 Controls: Start, Stop, Step, Reset, Speed. Map/skill changes immediately load a stopped episode.
 Reset uses the actual active map/skill, preserving model/backend, speed, priorities and historical
 cards. Priorities reorder the exact numbered WIN prompt only; they do not filter offers.
-The circled **How it plays ?** previews on hover/focus without interrupting play. Deliberate
-opening stops/cancels control and uses a native modal; closing never resumes it.
+The setup row contains map, difficulty, model and backend choices; the explanation button and
+its popup/modal have been removed. Controller policy and perception limits remain documented in
+the README and included in exported traces.
 
 Five keyed cards, newest first, preserve expansion, payload scroll and focus until eviction.
 No premature verdict during inference; Accepted does not imply successful gameplay. Exact state,

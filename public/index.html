@@ -26,9 +26,6 @@
         <label class="difficulty-setting">Difficulty <select id="difficulty" title="Changing difficulty reloads the current map and stops the game" disabled><option value="0">Easy</option><option value="1">Normal</option><option value="2" selected>Hard</option><option value="3">Nightmare</option></select></label>
         <label class="model-setting needs-selection">Model <select id="model" required aria-describedby="model-status"><option value="" disabled selected>Choose a decision model</option><option value="laya">Laya · 479 MB</option><option value="kev-0.8b">Kev · 857 MB</option></select></label>
         <label class="backend-setting">Backend <select id="backend"><option value="auto">Auto / GPU</option><option value="wasm">CPU / WASM</option></select></label>
-        <div class="assistance-setting">
-          <div class="setting-title"><span>How it plays</span><button id="assistance-help-button" class="help-button" type="button" aria-label="How qev plays" aria-haspopup="dialog" aria-controls="assistance-help assistance-help-preview" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
-        </div>
         <button id="cancel-model" aria-label="Cancel model download" hidden>Cancel</button>
       </div>
       <div class="setup-status">
@@ -77,26 +74,6 @@
     <a href="https://github.com/GMH-Code/Qwasm" target="_blank" rel="noopener noreferrer">qwasm</a>
     <a href="https://github.com/lavenderdotpet/LibreQuake" target="_blank" rel="noopener noreferrer">libre quake</a>
   </footer>
-  <div id="assistance-help-preview" class="help-preview" role="dialog" aria-modal="false" aria-labelledby="assistance-help-preview-title" hidden>
-    <div class="help-head"><h2 id="assistance-help-preview-title">How qev plays</h2><button type="button" data-help-close aria-label="Close explanation preview">×</button></div>
-    <div class="help-copy"></div>
-    <div class="help-foot"><button type="button" data-help-open>Keep open</button><span>Clicking pauses play.</span></div>
-  </div>
-  <dialog id="assistance-help" class="help-dialog" aria-labelledby="assistance-help-title" aria-describedby="assistance-help-intro">
-    <div class="help-head"><h2 id="assistance-help-title">How qev plays</h2><button type="button" data-help-close aria-label="Close control explanation">×</button></div>
-    <div class="help-copy">
-      <p id="assistance-help-intro" class="help-intro"><strong>Assistance is OK here.</strong> We are testing the model’s decisions, not its ability to execute precise movements or aim.</p>
-      <h3>One setup · player-observable information</h3>
-      <p>The model gets HUD, inventory and scoreboard facts, feedback when its own movement is ineffective, visible objects’ screen positions, apparent size and animation cues, coarse visible surfaces, and recent stereo sound captions. Every question also gets the complete owned weapon inventory, ammunition totals, and the held weapon’s reach: the axe is contact-only melee, not a ranged gun. Seeing a weapon pickup or having spare ammo does not mean that weapon is owned. Visible death animations and corpses are distinguished from active enemies; a downed zombie may revive. It remembers actual sightings, actions and HUD changes—not an exact-position map.</p>
-      <h3>The model decides; code executes</h3>
-      <p>The model scores explicit questions for a tactic, any visible target or item, and a weapon. qev samples each used question’s full probability distribution once, without temperature changes or top-k filtering. The original SDK answers and each sampling draw stay in the trace; a rejected decision is not resampled. The prompt favors the best effective loaded gun and treats the axe as a last resort. Weapon sampling remains on, so a weaker choice is still possible; code does not force a best-weapon ranking. Weapon choice happens alongside the tactic: keeping the current gun costs no action; switching does not block movement or aiming. Code helps aim at visible pixels, attack when aligned, run, jump or swim. Attack means an axe swing or gunfire according to the equipped weapon. The explicit “Engage: aim and attack, close in with axe” action also advances while the actual held weapon is the axe; with a gun it aims and attacks without that advance. “Hold position and attack” remains stationary. Engagement does not measure distance or find a route, and walls can block it. Normal Quake weapon refusal/fallback rules apply; an empty weapon request cannot indefinitely block the attack input. It never picks the nearest enemy, checks hidden routes, vetoes danger, or silently replaces the chosen action. Losing sight stops a targeted command; visible death ends that enemy’s aimed attack without switching targets. It does not track through walls. Crosshair alignment does not prove melee contact.</p>
-      <p>After pixel aiming or an explicit model look-up/down command ends, code eases the view back to level at up to 180°/s, bounded to 30 ticks or 750 ms. This only changes pitch—not yaw, movement, firing or target selection. A new target or active look-up/down command takes priority; leveling waits until that command releases. Stop freezes recovery; a frozen Step never runs extra frames, and its next ordinary action can finish leveling.</p>
-      <h3>Perception is still incomplete</h3>
-      <p>These are text models, not eyes and ears: labels come from renderer and sound metadata, not RGB/audio recognition. Tiny or dark fragments may be labelled better than a human could recognize. Object lists, sound captions and memory are bounded. Surface cues do not establish walkability, depth, cover or safety. There is no reliable reading of level text or recognition of doors/switches, full visual map, puzzle solver, or persistent task planner. Animation labels use content-verified demo assets or meaningful frame names; unrecognized appearances stay unknown. No hidden enemy health or dead flags are read.</p>
-      <p class="help-note">There is no privileged legacy mode. Normal Quake physics, damage and built-in weapon rules still apply. This is an inspectable decision experiment—not a claim of human-equivalent play or reliable survival.</p>
-    </div>
-    <div class="help-foot"><span>Closing this explanation leaves play stopped.</span><button type="button" data-help-close>Close</button></div>
-  </dialog>
   <script type="module" src="./src/app.js"></script>
 </body>
 </html>

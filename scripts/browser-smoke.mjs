@@ -13,7 +13,6 @@ import { checkPriorities } from "./browser-priorities.mjs";
 import { checkController, runPlayerTrial } from "./browser-controller.mjs";
 import { checkRecenter } from "./browser-recenter.mjs";
 import { checkScreen, checkScreenModel } from "./browser-screen.mjs";
-import { checkHelp } from "./browser-help.mjs";
 import { checkReset } from "./browser-reset.mjs";
 import { replies as fixtureReplies, decisionReplies as fixtureDecisionReplies } from "../tests/replies.mjs";
 
@@ -82,10 +81,10 @@ try {
   await navigate("/");
   await until(() => evaluate("!document.querySelector('#retry-demo').hidden"));
   await checkDemoOnly("failed loading does not expose a manual-import fallback");
-  await checkHelp({ evaluate, check, call, until, onScreenshot: async name => {
-    const image = await call('Page.captureScreenshot', { format: 'png' });
-    await writeFile(resolve(root, `build/qev-assistance-help-${name}.png`), Buffer.from(image.data, 'base64'));
-  } });
+  await check("the setup has no explanation question-mark control or orphaned popup", `
+    return !document.querySelector('.assistance-setting, #assistance-help-button, #assistance-help-preview, #assistance-help') &&
+      !document.querySelector('.setup-row').textContent.includes('How it plays');
+  `);
   await check("an interrupted download offers setup/reload guidance and never boots partial data", `
     return !qev.engine && !qev.model && document.querySelector('#step').disabled && document.querySelector('#auto').disabled && document.querySelector('#map').disabled &&
       document.querySelector('#asset-status').textContent.includes('pak1.pak') &&

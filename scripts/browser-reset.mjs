@@ -88,14 +88,7 @@ export async function checkReset({ evaluate, check, until, call, bindKillForTest
     `);
     await evaluate("document.querySelector('#speed').value='1';document.querySelector('#speed').dispatchEvent(new Event('change',{bubbles:true}));document.activeElement.blur();document.querySelector('#auto').click()");
     await until(() => evaluate("qev.agent.busy && !qev.engine.snapshot().paused"));
-    await evaluate("resetTest.live=qev.agent.current;resetTest.liveCall=resetTest.calls.length-1;resetTest.hoverTick=qev.engine.snapshot().tick;resetTest.hoverFocus=document.activeElement");
-    const hover = await evaluate("(()=>{const r=document.querySelector('#assistance-help-button').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()");
-    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...hover });
-    await check('hovering help during Auto does not pause gameplay, steal focus or cancel the pending decision', `
-      await new Promise(r=>setTimeout(r,220));const s=qev.engine.snapshot();
-      return !document.querySelector('#assistance-help-preview').hidden && !s.paused && s.tick>resetTest.hoverTick &&
-        qev.playMode==='auto' && resetTest.live.status==='scoring' && document.activeElement===resetTest.hoverFocus;
-    `);
+    await evaluate("resetTest.live=qev.agent.current;resetTest.liveCall=resetTest.calls.length-1");
     await click('reset'); await idle();
     await evaluate("resetTest.liveFrozen=qev.engine.snapshot();resetTest.answer(resetTest.liveCall,'fire')");
     await until(() => evaluate("!qev.agent.busy"));
@@ -103,27 +96,6 @@ export async function checkReset({ evaluate, check, until, call, bindKillForTest
       await new Promise(r=>setTimeout(r,180));const s=qev.engine.snapshot();
       return resetTest.live.status==='discarded' && !resetTest.live.appliedAt && s.epoch!==resetTest.live.before.epoch &&
         s.tick===resetTest.liveFrozen.tick && s.paused && s.actionTicksLeft===0 && qev.playMode==='inspection';
-    `);
-
-    await evaluate("document.querySelector('#step').click();resetTest.helpStep=qev.agent.current;resetTest.helpCall=resetTest.calls.length-1");
-    await click('assistance-help-button');
-    await check('deliberately opening the help modal stops play and cancels a pending Step', `
-      resetTest.helpFrozen=qev.engine.snapshot();resetTest.helpCalls=resetTest.calls.length;
-      return document.querySelector('#assistance-help').matches(':modal') && qev.playMode==='inspection' &&
-        resetTest.helpFrozen.paused && resetTest.helpStep.status==='cancelled';
-    `);
-    for (const [key, code, vk] of [['n', 'KeyN', 78], ['p', 'KeyP', 80]]) {
-      await call('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: vk, text: key });
-      await call('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk });
-    }
-    await check('game shortcuts do not run behind the help modal', `
-      return resetTest.calls.length===resetTest.helpCalls && qev.engine.snapshot().controlSession===resetTest.helpFrozen.controlSession;
-    `);
-    await evaluate("resetTest.answer(resetTest.helpCall,'fire');document.querySelector('#assistance-help .help-foot [data-help-close]').click()");
-    await until(() => evaluate("!qev.agent.busy"));
-    await check('closing help does not apply the cancelled reply or resume the simulation', `
-      const s=qev.engine.snapshot();return resetTest.helpStep.status==='discarded' && !resetTest.helpStep.after &&
-        !document.querySelector('#assistance-help').open && s.paused && s.tick===resetTest.helpFrozen.tick;
     `);
 
     await evaluate("qev.engine.play()"); await bindKillForTest(); await killPlayerViaConsole();
@@ -134,7 +106,7 @@ export async function checkReset({ evaluate, check, until, call, bindKillForTest
         s.controlMode==='player-observable' && qev.agent.getModel()===resetTest.model && JSON.stringify(qev.priorityOrder)===resetTest.order;
     `);
   } finally {
-    await evaluate(`qev.pause();document.querySelector('#assistance-help .help-head [data-help-close]').click();
+    await evaluate(`qev.pause();
       if(resetTest.releaseLoad)resetTest.releaseLoad();for(let i=0;i<resetTest.calls.length;i++)resetTest.answer(i);
       qev.agent.getModel=resetTest.getModel;qev.engine.loadMap=resetTest.loadMap;qev.engine.resumeAudio=resetTest.resumeAudio;qev.agent.invalidate()`);
     await until(() => evaluate("!qev.agent.busy && !document.querySelector('#reset').disabled"));
