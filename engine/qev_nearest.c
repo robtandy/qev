@@ -3,7 +3,7 @@
 #include <math.h>
 
 void qev_NearestReset(qev_nearest_t *s) { s->slot = 0; s->squared = INFINITY; }
-void qev_NearestConsider(qev_nearest_t *s, int slot, int visible, const float eye[3], const float point[3]) {
+void qev_NearestConsider(qev_nearest_t *s, int slot, int visible, const float *eye, const float *point) {
     /* Hidden/ineligible objects must not even have their coordinates read. */
     if (!visible || slot <= 0 || !eye || !point) return;
     double distance = 0;

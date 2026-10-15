@@ -9,7 +9,7 @@ int main(void) {
     const float a[] = {10, -20, 15}, b[] = {13, -16, 5}, tie[] = {7, -24, 5};
     qev_NearestReset(&s); assert(!s.slot && isinf(s.squared));
     /* A hidden object never needs readable coordinates, even if it is closest. */
-    qev_NearestConsider(&s, 99, 0, NULL, (const float *)1); assert(!s.slot);
+    qev_NearestConsider(&s, 99, 0, eye, (const float *)1); assert(!s.slot);
     qev_NearestConsider(&s, 0, 1, eye, eye); assert(!s.slot);
     qev_NearestConsider(&s, 4, 1, eye, a); assert(s.slot == 4 && s.squared == 100);
     qev_NearestConsider(&s, 8, 0, eye, eye); assert(s.slot == 4);
