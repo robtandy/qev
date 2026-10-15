@@ -59,22 +59,20 @@ test("invalid or zero-total weights reject before consuming randomness", () => {
     assert.throws(() => sampleDistribution(weights, () => assert.fail("must not draw")), /Invalid sampling/);
 });
 
-test("tactic, target and equipment can ALL differ from SDK argmax, with exact immutable evidence and replayable draws", () => {
+test("the tactic may differ from SDK argmax; automatic bindings have no fabricated answers or random draws", () => {
   const r = record();
   head(r, "action", { wait: 0.55, engage: 0.45 }, "wait");
-  head(r, "aim", { e1: 0.7, e2: 0.3 }, "e1");
-  head(r, "weapon", { w1: 0.15, w2: 0.85 }, "w2");
-  const raw = structuredClone(r.responses), requests = structuredClone(r.requests), random = draws([0.2, 0.8, 0.1]);
+  const raw = structuredClone(r.responses), requests = structuredClone(r.requests), random = draws([0.2]);
   for (const response of r.responses) for (const answer of Object.values(response.answers)) { Object.freeze(answer.probabilities); Object.freeze(answer); }
   r.selected = resolveSelection(r, random);
-  assert.equal(r.selected.id, "engage"); assert.equal(r.selected.params.ref, 72); assert.equal(r.selected.params.weapon, 1);
-  assert.equal(r.selected.params.meleeApproach, true); assert.equal(r.selected.selection.id, "e2");
-  assert.equal(r.selected.selection.answer.choice, "e1"); assert.equal(r.selected.weaponSelection.id, "w1");
-  assert.equal(r.selected.weaponSelection.answer.choice, "w2");
+  assert.equal(r.selected.id, "engage"); assert.equal(r.selected.params.ref, 10); assert.equal(r.selected.params.weapon, 2);
+  assert.equal(r.selected.params.meleeApproach, true); assert.equal(r.selected.selection.id, "e1");
+  assert.equal(r.selected.selection.answer, undefined); assert.equal(r.selected.weaponSelection.id, "w2");
+  assert.equal(r.selected.weaponSelection.answer, undefined);
   assert.equal(rankDecision(r)[0].id, "wait", "inspection ranking still preserves SDK argmax");
-  assert.deepEqual(r.responses, raw); assert.deepEqual(r.requests, requests); assert.equal(random.calls, 3);
+  assert.deepEqual(r.responses, raw); assert.deepEqual(r.requests, requests); assert.equal(random.calls, 1);
   assert.equal(r.sampling.method, SAMPLING_METHOD); assert.equal(r.sampling.complete, true);
-  assert.deepEqual(Object.keys(r.sampling.heads), ["action", "aim", "weapon"]);
+  assert.deepEqual(Object.keys(r.sampling.heads), ["action"]);
   for (const [question, sampled] of Object.entries(r.sampling.heads)) {
     const answer = r.responses[sampled.responseIndex].answers[question];
     const replay = sampleDistribution(sampled.options.map(id => answer.probabilities[id]), () => sampled.draw);
@@ -82,7 +80,7 @@ test("tactic, target and equipment can ALL differ from SDK argmax, with exact im
     assert.deepEqual(sampled.interval, replay.interval); assert.equal(sampled.sdkChoice, answer.choice);
     assert.equal(sampled.normalizedProbability, replay.normalizedProbability);
   }
-  assert.throws(() => resolveSelection(r, random), /already been sampled/); assert.equal(random.calls, 3);
+  assert.throws(() => resolveSelection(r, random), /already been sampled/); assert.equal(random.calls, 1);
   assert.strictEqual(decisionOutcome(r).sampling, r.sampling);
   assert.match(decisionView({ ...r, status: "scored", ms: 10 }).meta, /sampled/);
 });
@@ -96,35 +94,34 @@ test("rounded ties may sample either option; SDK tie-breaking survives unchanged
   }
 });
 
-test("sampling consumes only the chosen tactic's relevant heads; unused malformed answers cannot invent targets", () => {
-  const r = record({ action: "forward" }); delete r.responses[1].answers.aim; delete r.responses[2].answers.item;
-  const random = draws([0.9, 0.1]), selected = resolveSelection(r, random);
+test("unrequested extra answer fields cannot invent targets or equipment", () => {
+  const r = record({ action: "forward" }); r.responses[0].answers.aim = { choice: "invented" }; r.responses[0].answers.weapon = { choice: "w9" };
+  const random = draws([0.9]), selected = resolveSelection(r, random);
   assert.equal(selected.id, "forward"); assert.equal(selected.params.ref, 0); assert.equal(selected.selection, null);
-  assert.deepEqual(Object.keys(r.sampling.heads), ["action", "weapon"]); assert.equal(random.calls, 2);
+  assert.equal(selected.params.weapon, 2);
+  assert.deepEqual(Object.keys(r.sampling.heads), ["action"]); assert.equal(random.calls, 1);
 });
 
-test("a sampled pickup binds the sampled item rather than the SDK top item", () => {
-  const s = observation(); s.pickups.push(visible("item_health", 90));
+test("pickup approach binds the native nearest marker without an item question or draw", () => {
+  const s = observation(); s.pickups[0].nearest = false; s.pickups.push(visible("item_health", 90, undefined, { nearest: true }));
   const r = prepareDecision(s); r.responses = decisionReplies(r, { action: "approach" });
-  const [first, second] = r.bindings.item;
-  head(r, "item", { [first.id]: 0.8, [second.id]: 0.2 }, first.id);
-  const random = draws([0.2, 0.9, 0.3]), selected = resolveSelection(r, random);
-  assert.equal(selected.params.ref, 90); assert.equal(selected.selection.id, second.id);
-  assert.deepEqual(Object.keys(r.sampling.heads), ["action", "item", "weapon"]);
+  const random = draws([0.2]), selected = resolveSelection(r, random);
+  assert.equal(selected.params.ref, 90); assert.equal(selected.selection.id, "p2");
+  assert.deepEqual(Object.keys(r.sampling.heads), ["action"]); assert.equal(random.calls, 1);
 });
 
 test("one owned weapon requires no equipment distribution or invented draw", () => {
   const s = observation(); s.player.weapons = [{ id: 1, name: "axe" }]; s.player.weapon = "axe";
   const r = prepareDecision(s); r.responses = decisionReplies(r, { action: "engage" });
-  const random = draws([0.25, 0.75]), selected = resolveSelection(r, random);
-  assert.equal(selected.params.weapon, 0); assert.equal(selected.weaponSelection, null);
-  assert.deepEqual(Object.keys(r.sampling.heads), ["action", "aim"]); assert.equal(random.calls, 2);
+  const random = draws([0.25]), selected = resolveSelection(r, random);
+  assert.equal(selected.params.weapon, 1); assert.equal(selected.weaponSelection.method, "strongest-loaded-v1");
+  assert.deepEqual(Object.keys(r.sampling.heads), ["action"]); assert.equal(random.calls, 1);
 });
 
-test("a malformed used head rejects the sampled action with no additional draws or retry", () => {
-  const r = record(); delete r.responses.find(r => r.answers.weapon).answers.weapon;
+test("a missing required nearest marker rejects the sampled action with no additional draws or retry", () => {
+  const r = record(); r.automatic.aim = null;
   const raw = structuredClone(r.responses), random = draws([0.5]);
-  assert.throws(() => resolveSelection(r, random), /Invalid weapon selection/);
+  assert.throws(() => resolveSelection(r, random), /Automatic aim unavailable/);
   assert.equal(r.sampling.complete, false); assert.deepEqual(Object.keys(r.sampling.heads), ["action"]);
   assert.throws(() => resolveSelection(r, random), /already been sampled/); assert.equal(random.calls, 1);
   assert.deepEqual(r.responses, raw);
@@ -141,8 +138,8 @@ test("noul diagnostic scores are not silently treated as a categorical distribut
   r.responses = decisionReplies(r, { action: "forward" });
   const random = draws([0.1]), selected = resolveSelection(r, random);
   assert.equal(selected.id, "forward"); assert.equal(r.sampling.heads.action.method, "highest-noul-rating");
-  assert.equal(r.sampling.heads.action.draw, undefined); assert.equal(r.sampling.heads.weapon.method, SAMPLING_METHOD);
-  assert.equal(random.calls, 1);
+  assert.equal(r.sampling.heads.action.draw, undefined); assert.equal(r.sampling.heads.weapon, undefined);
+  assert.equal(random.calls, 0);
 });
 
 function agentFixture({ realtime = false } = {}) {
@@ -163,23 +160,23 @@ function agentFixture({ realtime = false } = {}) {
 test("Agent scores once, then Step executes that same sampled composite without redrawing", async () => {
   const f = agentFixture(); f.finish(); const r = await f.promise;
   assert.equal(r.selected.id, "forward"); assert.equal(r.responses[0].answers.action.choice, r.eligible.find(c => c.id === "wait").optionId);
-  assert.equal(f.random.calls, 2); await f.agent.step();
-  assert.strictEqual(f.actions[0], r.selected.params); assert.equal(f.random.calls, 2);
+  assert.equal(f.random.calls, 1); await f.agent.step();
+  assert.strictEqual(f.actions[0], r.selected.params); assert.equal(f.random.calls, 1);
   await assert.rejects(f.agent.step(), /Score/); assert.equal(f.actions.length, 1);
 });
 
 test("stale scoring and token-limit failures consume no sampling randomness", async () => {
   const stale = agentFixture(); stale.state.tick++; stale.finish();
   assert.equal(await stale.promise, null); assert.equal(stale.random.calls, 0); assert.equal(stale.r.sampling, null);
-  const capped = agentFixture(); capped.model.info.arch = "laya"; capped.r.responses[1].usage = { input_tokens: 512 }; capped.finish();
+  const capped = agentFixture(); capped.model.info.arch = "laya"; capped.r.responses[0].usage = { input_tokens: 512 }; capped.finish();
   await assert.rejects(capped.promise, /512-token input limit/); assert.equal(capped.random.calls, 0); assert.equal(capped.r.sampling, null);
 });
 
 test("a stale Step and a rejected live application never fall back or resample", async () => {
   const stale = agentFixture(); stale.finish(); await stale.promise; stale.state.tick++;
-  await assert.rejects(stale.agent.step(), /world changed/); assert.equal(stale.random.calls, 2); assert.equal(stale.actions.length, 0);
+  await assert.rejects(stale.agent.step(), /world changed/); assert.equal(stale.random.calls, 1); assert.equal(stale.actions.length, 0);
   const live = agentFixture({ realtime: true }); live.finish(); const r = await live.promise;
-  assert.equal(live.agent.applyLive(), false); assert.equal(r.status, "rejected"); assert.equal(live.random.calls, 2);
+  assert.equal(live.agent.applyLive(), false); assert.equal(r.status, "rejected"); assert.equal(live.random.calls, 1);
   assert.strictEqual(live.actions[0], r.selected.params); assert.equal(r.selected.id, "forward");
-  assert.throws(() => live.agent.applyLive(), /Score/); assert.equal(live.random.calls, 2);
+  assert.throws(() => live.agent.applyLive(), /Score/); assert.equal(live.random.calls, 1);
 });

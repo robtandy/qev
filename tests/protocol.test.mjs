@@ -18,36 +18,36 @@ for (const [label, mutate] of [
 
 test("one batch preserves shared state verbatim while accounting for each question independently", () => {
   const r = prepareDecision(observation());
-  assert.equal(r.requests.length, 4); assert.equal(modelState(r), r.sharedState);
+  assert.equal(r.requests.length, 1); assert.equal(modelState(r), r.sharedState);
   assert.ok(r.requests.every(request => Object.keys(request.questions).length === 1));
   r.responses = decisionReplies(r, { action: "attack" });
   r.selectedIndex = rankDecision(r)[0].index; r.selected = resolveSelection(r);
-  assert.equal(r.selected.selection.responseIndex, 1);
-  assert.equal(r.selected.selection.answer.choice, r.responses[1].answers.aim.choice);
-  assert.match(r.grounding.aim.criteria.e1, /grunt center mid medium crosshair/);
+  assert.equal(r.selected.selection.responseIndex, undefined);
+  assert.equal(r.selected.selection.answer, undefined);
+  assert.equal(r.selected.selection.method, "nearest-visible-distance-v1");
   r.status = "scored"; r.before = observation(); r.ms = 10;
-  assert.match(decisionView(r).action, /Hold position and attack · e1 grunt/);
+  assert.match(decisionView(r).action, /Hold position and attack nearest enemy · nearest grunt/);
 });
 
-test("multi-head usage is not mistaken for a single Laya sequence hitting its limit", async () => {
+test("single-question Laya usage is retained without invented binding sequences", async () => {
   const s = observation(); const engine = { pause() {}, snapshot: () => structuredClone(s) };
   const model = { info: { arch: "laya" }, async decideMany(requests) {
     return replies(requests).map(r => ({ ...r, usage: { input_tokens: 300 } }));
   } };
   const agent = new Agent({ engine, getModel: () => model }), r = await agent.score();
-  assert.equal(r.responses.reduce((sum, response) => sum + response.usage.input_tokens, 0), 1200);
+  assert.equal(r.responses.reduce((sum, response) => sum + response.usage.input_tokens, 0), 300);
   assert.equal(r.status, "scored"); assert.deepEqual(r.warnings, []);
 });
 
-test("a saturated binding head rejects the whole decision, even if the tactic head fits", async () => {
+test("a saturated action question rejects the decision without sampling or automatic execution", async () => {
   const s = observation(); const engine = { pause() {}, snapshot: () => structuredClone(s) };
   const model = { info: { arch: "laya" }, async decideMany(requests) {
-    return replies(requests).map((r, i) => ({ ...r, usage: { input_tokens: i === 1 ? 512 : 300 } }));
+    return replies(requests).map((r, i) => ({ ...r, usage: { input_tokens: i === 0 ? 512 : 300 } }));
   } };
   const agent = new Agent({ engine, getModel: () => model });
   await assert.rejects(agent.score(), /512-token input limit/);
   assert.equal(agent.current.status, "error"); assert.equal(agent.current.selectedIndex, null);
-  assert.equal(agent.current.responses[1].usage.input_tokens, 512);
+  assert.equal(agent.current.responses[0].usage.input_tokens, 512);
 });
 
 test("missing or extra response items cannot shift which answer is bound to the chosen tactic", () => {
@@ -56,8 +56,8 @@ test("missing or extra response items cannot shift which answer is bound to the 
     r.responses = responses; assert.throws(() => rankDecision(r), /response count/);
   }
   r.responses = structuredClone(correct);
-  [r.responses[1], r.responses[2]] = [r.responses[2], r.responses[1]];
-  assert.throws(() => resolveSelection(r), /Invalid aim selection/);
+  r.responses[0].answers = { aim: { type: "choice", choice: "e1", probabilities: { e1: 1 } } };
+  assert.throws(() => resolveSelection(r), /Invalid action choice/);
 });
 
 test("held-weapon choice accompanies movement; switching HUD counters is not ammo expenditure", () => {
@@ -65,7 +65,7 @@ test("held-weapon choice accompanies movement; switching HUD counters is not amm
   const r = prepareDecision(s);
   r.responses = decisionReplies(r, { action: "forward", weapon: "w2" });
   r.selectedIndex = rankDecision(r)[0].index; const selection = resolveSelection(r);
-  assert.match(selection.label, /Run forward · shotgun/); assert.equal(selection.params.weapon, 2);
+  assert.match(selection.label, /Run forward · auto shotgun/); assert.equal(selection.params.weapon, 2);
   assert.equal(selection.params.forward, 1); assert.equal(selection.weaponSelection.id, "w2");
   const after = structuredClone(s); advance(after, 12); after.player.weapon = "axe"; after.player.ammo = 0;
   memory.outcome({ id: "forward", label: "Walk forward · axe" }, s, after, 12);
@@ -90,7 +90,7 @@ test("server interaction metadata cannot reveal a plain-looking door or button",
 test("the checked-in example is marked synthetic and uses the current explicit batch/command contract", () => {
   const example = JSON.parse(readFileSync(new URL("../examples/combat-decision.json", import.meta.url), "utf8"));
   assert.equal(example.synthetic, true); assert.match(example.notice, /Not captured gameplay/);
-  assert.equal(example.controlMode, "player-observable");
+  assert.equal(example.controlMode, "visible-assisted");
   assert.ok(example.requests.every(r => Object.keys(r.questions).length === 1));
   assert.equal(new Set(example.requests.map(r => r.state)).size, 1);
   assert.ok(example.responses.every(r => r.model === "synthetic-example-no-inference"));

@@ -1,12 +1,12 @@
 {
   "synthetic": true,
-  "notice": "Hand-authored observation, probabilities and sampling draws. Not captured gameplay, real model inference or an executed command. Refs are illustrative.",
-  "controlMode": "player-observable",
-  "observationPolicy": "HUD/inventory/scoreboard and own grounded/water/motion feedback; renderer-labelled final visible pixels, surface appearance and current animation; captions from nonzero spatialized sound samples; bounded memories of actual observations/actions. Not RGB/audio recognition. No world coordinates, metric ranges, hidden entities, future states or route/LOS probes. Labels can exceed human recognition in darkness; current animation uses fingerprinted asset labels or meaningful frame names; unknown appearances abstain. Every question includes the same complete HUD-owned weapon inventory and ammo pools, separate from the actual held weapon. Pickups/ammunition do not imply ownership. Weapon reach, relative strength and switch-ammo requirements are static game knowledge, not measured target distance. Brush door/button functions are not revealed by server class. Opaque execution references expire on visual loss; they are not tracking identities.",
-  "controller": "The model selects a tactic and its visible target/item, plus a concurrent owned-weapon choice, through explicit questions. Each used choice head is sampled once from its full public probability distribution (temperature 1, no top-k/p); only rounding is normalized. Best-effective-loaded-gun guidance and an axe-last-resort preference are prompt instructions, not a fixed ranking or sampling exemption for weapons. Raw SDK top choices and probabilities remain unchanged. Every draw, interval and option order is recorded; rejected decisions are never resampled. The separate noul diagnostic ranks independent ratings, which are not categorical probabilities. Code only executes that composite choice: bounded relative movement, visible-pixel aim, aim-overlap attack input, one jump press, or swim input. The explicit Engage goal additionally advances while the current HUD weapon is the axe; a ranged weapon attacks without that advance. This is declared goal execution, never an override of Hold position or raw attacks. It does not measure reach or find a route; normal collisions may block it. Keeping a weapon never spends an action; a different one gets a single switch press, with firing suppressed for that press only. Normal game weapon refusal/fallback must not deadlock a chosen attack. No tactical shortlist, danger/ammo veto, target substitution, hidden tracking or pathfinding. Visual loss or a visible death/corpse pose stops that targeted attack, without choosing a replacement. Downed/recovering zombies are not declared dead. Releasing pixel aim or finishing an explicit model look-up/down command returns pitch toward level at up to 180 degrees/second, for at most 30 ticks or 750ms; no yaw, movement, attack or retargeting is added. A new target or active explicit look-up/down takes priority; only executed camera input owes later leveling. Stop suspends cleanup and frozen Step never advances extra frames; ordinary subsequent commands can finish leveling. Normal Quake physics, weapon rules and damage apply.",
+  "notice": "Hand-authored observation (including nearest markers), probabilities and one sampling draw. Not captured gameplay, real model inference or an executed command. Refs are illustrative.",
+  "controlMode": "visible-assisted",
+  "observationPolicy": "Model inputs are HUD/inventory/scoreboard and own grounded/water/motion feedback; renderer-labelled visible pixels, surfaces and current animation; mixed-sound captions; bounded memories of actual observations/actions. Not RGB/audio recognition. No coordinates, measured ranges, hidden entities, future states, health/deadflags or route/LOS probes are sent to the model. The user-approved controller separately compares distances to currently rendered model centers, only after final visible pixels are confirmed. It exports nearest-visible markers, not distances or positions, for automatic binding. The chosen active enemy and pickup are retained in the capped visible lists; remaining entries use screen coverage. Recognized dying/corpse appearances cannot be enemy targets; downed/recovering or unknown poses remain uncertain. Full owned inventory, ammo pools and the actually held weapon's reach remain in the action question. Pickups/ammo never imply ownership. Plain-looking brush functions are not revealed as interactions. Visible references expire on loss; memory never tracks hidden objects.",
+  "controller": "Normal play asks ONE action-choice question. The model's full public tactic distribution is sampled once without temperature changes, top-k/p or tactical reweighting; rounding alone is normalized. The original SDK answer and replayable draw remain unchanged. The explicit noul diagnostic still ranks independent tactic ratings. Target and weapon questions/sampling are removed: the controller binds the sampled tactic to the nearest currently visible eligible enemy or pickup, using renderer-side model-center distance, and selects the strongest loaded HUD-owned weapon. Power priority is lightning, rocket launcher, grenade launcher, super nailgun, nailgun, double shotgun, shotgun, axe. This fixed order is not a safety or range optimizer; native splash, underwater discharge, spread, ammo refusal and fallback remain. Switch minimums are respected; a held upgraded gun can use its native one-round fallback. Bindings are recorded separately from the model answer at score time and refreshed at application time. A chosen target is held for that bounded command, never tracked through walls or automatically replaced mid-lease. No valid target at application means rejection, not a new tactic or another draw. Execution uses relative movement, visible-pixel aiming, aim-overlap attack, one jump press or swim input. Engage advances only while the current HUD weapon is the axe; stationary/raw attacks gain no advance. A held weapon sends no switch press; a different choice gets one press and suppresses attack only on that tick. Visible loss/death ends targeted input. Pixel aim and explicit look-up/down return pitch toward level after release, bounded to 180 degrees/second, 30 ticks or 750ms, without yaw/movement/attack. Active looks/new targets preempt cleanup; Stop freezes it; Step adds no frames. Normal physics, weapons, damage and difficulty remain unchanged.",
   "observation": {
-    "version": 4,
-    "controlMode": "player-observable",
+    "version": 5,
+    "controlMode": "visible-assisted",
     "ready": true,
     "alive": true,
     "completed": false,
@@ -58,6 +58,7 @@
         "ref": 10,
         "visible": true,
         "pose": "unknown",
+        "nearest": true,
         "screen": {
           "bounds": [
             0.6,
@@ -78,6 +79,7 @@
         "ref": 20,
         "visible": true,
         "pose": "unknown",
+        "nearest": true,
         "screen": {
           "bounds": [
             0.22,
@@ -200,11 +202,11 @@
   },
   "requests": [
     {
-      "state": "Goal: WIN: defeat enemies, exit alive. Priorities (highest first): 1. Evade attacks while making progress; do not camp. 2. Get needed health, armor and ammo without reckless exposure. 3. Defeat active enemies with aimed fire and movement. 4. Explore for supplies, routes and the exit.\nHUD: health 28, armor 0, held shotgun (ranged pellets; spread at distance), ammo 8; shells/nails/rockets/cells 8/0/0/0; keys none; grounded.\nOwned weapons: axe, shotgun. Use best loaded gun; axe last resort.\nVisible: grunt right medium; health left small.\nLower view: L/C floor-like; R floor-like/lava. Not a safe-route test.\nHeard: weapon right clear.\nStopped; max 200ms. Unseen unknown; size not depth; crosshair not melee contact.",
+      "state": "Goal: WIN: defeat enemies, exit alive. Priorities (highest first): 1. Evade attacks while making progress; do not camp. 2. Get needed health, armor and ammo without reckless exposure. 3. Defeat active enemies with aimed fire and movement. 4. Explore for supplies, routes and the exit.\nHUD: health 28, armor 0, held shotgun (ranged pellets; spread at distance), ammo 8; shells/nails/rockets/cells 8/0/0/0; keys none; grounded.\nOwned weapons: axe, shotgun. Strongest loaded weapon auto.\nVisible: grunt right medium; health left small.\nLower view: L/C floor-like; R floor-like/lava. Not a safe-route test.\nHeard: weapon right clear.\nStopped; max 200ms. Unseen unknown; size not depth; crosshair not melee contact.",
       "questions": {
         "action": {
           "type": "choice",
-          "instructions": "Which tactic helps WIN? Follow listed priorities, highest first. Use recent outcomes; equipment is concurrent.",
+          "instructions": "Tactic to WIN? Follow priorities, highest first; use outcomes. Nearest targets; weapon auto.",
           "criteria": {
             "a0": "Run forward",
             "a1": "Back up",
@@ -215,54 +217,17 @@
             "a6": "Look up",
             "a7": "Look down",
             "a8": "Attack straight ahead",
-            "a9": "Engage: aim and attack, close in with axe",
-            "a10": "Hold position and attack",
+            "a9": "Engage nearest enemy; close in with axe",
+            "a10": "Hold position and attack nearest enemy",
             "a11": "Aim and attack while advancing",
             "a12": "Aim and attack while retreating",
             "a13": "Aim and attack moving left",
             "a14": "Aim and attack moving right",
-            "a15": "Approach item",
+            "a15": "Approach nearest pickup",
             "a16": "Jump forward",
             "a17": "Swim up",
             "a18": "Swim down",
             "a19": "Wait"
-          }
-        }
-      }
-    },
-    {
-      "state": "Goal: WIN: defeat enemies, exit alive. Priorities (highest first): 1. Evade attacks while making progress; do not camp. 2. Get needed health, armor and ammo without reckless exposure. 3. Defeat active enemies with aimed fire and movement. 4. Explore for supplies, routes and the exit.\nHUD: health 28, armor 0, held shotgun (ranged pellets; spread at distance), ammo 8; shells/nails/rockets/cells 8/0/0/0; keys none; grounded.\nOwned weapons: axe, shotgun. Use best loaded gun; axe last resort.\nVisible: grunt right medium; health left small.\nLower view: L/C floor-like; R floor-like/lava. Not a safe-route test.\nHeard: weapon right clear.\nStopped; max 200ms. Unseen unknown; size not depth; crosshair not melee contact.",
-      "questions": {
-        "aim": {
-          "type": "choice",
-          "instructions": "Which visible enemy is the urgent threat? Consider attacks, apparent size and damage. Crosshair alignment alone is not priority. Size is not distance.",
-          "criteria": {
-            "e1": "grunt right mid medium"
-          }
-        }
-      }
-    },
-    {
-      "state": "Goal: WIN: defeat enemies, exit alive. Priorities (highest first): 1. Evade attacks while making progress; do not camp. 2. Get needed health, armor and ammo without reckless exposure. 3. Defeat active enemies with aimed fire and movement. 4. Explore for supplies, routes and the exit.\nHUD: health 28, armor 0, held shotgun (ranged pellets; spread at distance), ammo 8; shells/nails/rockets/cells 8/0/0/0; keys none; grounded.\nOwned weapons: axe, shotgun. Use best loaded gun; axe last resort.\nVisible: grunt right medium; health left small.\nLower view: L/C floor-like; R floor-like/lava. Not a safe-route test.\nHeard: weapon right clear.\nStopped; max 200ms. Unseen unknown; size not depth; crosshair not melee contact.",
-      "questions": {
-        "item": {
-          "type": "choice",
-          "instructions": "Which visible pickup best meets HUD needs? Follow priorities. Size is not distance.",
-          "criteria": {
-            "p1": "health left mid small"
-          }
-        }
-      }
-    },
-    {
-      "state": "Goal: WIN: defeat enemies, exit alive. Priorities (highest first): 1. Evade attacks while making progress; do not camp. 2. Get needed health, armor and ammo without reckless exposure. 3. Defeat active enemies with aimed fire and movement. 4. Explore for supplies, routes and the exit.\nHUD: health 28, armor 0, held shotgun (ranged pellets; spread at distance), ammo 8; shells/nails/rockets/cells 8/0/0/0; keys none; grounded.\nOwned weapons: axe, shotgun. Use best loaded gun; axe last resort.\nVisible: grunt right medium; health left small.\nLower view: L/C floor-like; R floor-like/lava. Not a safe-route test.\nHeard: weapon right clear.\nStopped; max 200ms. Unseen unknown; size not depth; crosshair not melee contact.",
-      "questions": {
-        "weapon": {
-          "type": "choice",
-          "instructions": "Best owned weapon? Use strongest effective loaded gun; consider reach and self-harm.",
-          "criteria": {
-            "w1": "axe; weak contact-only melee, not ranged; no ammo needed",
-            "w2": "shotgun; ranged pellets; spread at distance; 8 shells (held)"
           }
         }
       }
@@ -296,43 +261,6 @@
             "a17": 0.021052631578947368,
             "a18": 0.021052631578947368,
             "a19": 0.021052631578947368
-          }
-        }
-      }
-    },
-    {
-      "model": "synthetic-example-no-inference",
-      "answers": {
-        "aim": {
-          "type": "choice",
-          "choice": "e1",
-          "probabilities": {
-            "e1": 1
-          }
-        }
-      }
-    },
-    {
-      "model": "synthetic-example-no-inference",
-      "answers": {
-        "item": {
-          "type": "choice",
-          "choice": "p1",
-          "probabilities": {
-            "p1": 1
-          }
-        }
-      }
-    },
-    {
-      "model": "synthetic-example-no-inference",
-      "answers": {
-        "weapon": {
-          "type": "choice",
-          "choice": "w2",
-          "probabilities": {
-            "w1": 0.4,
-            "w2": 0.6
           }
         }
       }
@@ -379,116 +307,56 @@
           0.2105263157894738
         ],
         "optionId": "a9"
-      },
-      "aim": {
-        "method": "categorical-v1",
-        "question": "aim",
-        "responseIndex": 1,
-        "options": [
-          "e1"
-        ],
-        "sdkChoice": "e1",
-        "index": 0,
-        "draw": 0.5,
-        "probability": 1,
-        "totalProbability": 1,
-        "normalizedProbability": 1,
-        "interval": [
-          0,
-          1
-        ],
-        "optionId": "e1"
-      },
-      "weapon": {
-        "method": "categorical-v1",
-        "question": "weapon",
-        "responseIndex": 3,
-        "options": [
-          "w1",
-          "w2"
-        ],
-        "sdkChoice": "w2",
-        "index": 1,
-        "draw": 0.7,
-        "probability": 0.6,
-        "totalProbability": 1,
-        "normalizedProbability": 0.6,
-        "interval": [
-          0.4,
-          1
-        ],
-        "optionId": "w2"
       }
+    }
+  },
+  "automatic": {
+    "policy": "nearest-visible-strongest-loaded-v1",
+    "epoch": 1,
+    "tick": 42,
+    "frame": 42,
+    "aim": {
+      "id": "e1",
+      "ref": 10,
+      "kind": "monster_army",
+      "method": "nearest-visible-distance-v1"
+    },
+    "item": {
+      "id": "p1",
+      "ref": 20,
+      "kind": "health",
+      "method": "nearest-visible-distance-v1"
+    },
+    "errors": {},
+    "weapon": {
+      "id": "w2",
+      "weapon": 2,
+      "name": "shotgun",
+      "method": "strongest-loaded-v1",
+      "ammo": "shells",
+      "available": 8,
+      "switchMinimum": 1
     }
   },
   "resolvedCommandExample": {
     "id": "engage",
     "optionId": "a9",
-    "label": "Engage: aim and attack, close in with axe · e1 grunt · shotgun",
+    "label": "Engage nearest enemy; close in with axe · nearest grunt · auto shotgun",
     "selection": {
-      "question": "aim",
-      "responseIndex": 1,
       "id": "e1",
-      "answer": {
-        "type": "choice",
-        "choice": "e1",
-        "probabilities": {
-          "e1": 1
-        }
-      },
-      "sampling": {
-        "method": "categorical-v1",
-        "question": "aim",
-        "responseIndex": 1,
-        "options": [
-          "e1"
-        ],
-        "sdkChoice": "e1",
-        "index": 0,
-        "draw": 0.5,
-        "probability": 1,
-        "totalProbability": 1,
-        "normalizedProbability": 1,
-        "interval": [
-          0,
-          1
-        ],
-        "optionId": "e1"
-      }
+      "ref": 10,
+      "kind": "monster_army",
+      "method": "nearest-visible-distance-v1",
+      "binding": "aim"
     },
     "weaponSelection": {
-      "question": "weapon",
-      "responseIndex": 3,
       "id": "w2",
-      "answer": {
-        "type": "choice",
-        "choice": "w2",
-        "probabilities": {
-          "w1": 0.4,
-          "w2": 0.6
-        }
-      },
-      "sampling": {
-        "method": "categorical-v1",
-        "question": "weapon",
-        "responseIndex": 3,
-        "options": [
-          "w1",
-          "w2"
-        ],
-        "sdkChoice": "w2",
-        "index": 1,
-        "draw": 0.7,
-        "probability": 0.6,
-        "totalProbability": 1,
-        "normalizedProbability": 0.6,
-        "interval": [
-          0.4,
-          1
-        ],
-        "optionId": "w2"
-      },
-      "name": "shotgun"
+      "weapon": 2,
+      "name": "shotgun",
+      "method": "strongest-loaded-v1",
+      "ammo": "shells",
+      "available": 8,
+      "switchMinimum": 1
     },
     "params": {
       "epoch": 1,
@@ -508,9 +376,9 @@
   },
   "notes": [
     "All tactics are offered without geometry probes, resource/health filtering or a tactical shortlist.",
-    "Separate choice questions share the same state in one batch. The chosen tactic's target and the concurrent weapon choice are used. Keeping the shotgun does not consume a separate action.",
-    "Full distributions are sampled once, in offer order. Each used head records its draw and interval; the original SDK argmax and probabilities remain untouched. No retry or tactical substitution.",
-    "Here the illustrative action draw selects Engage rather than the SDK's top back-fire; the aim and equipment draws choose e1 and shotgun.",
+    "Only one action question is asked. Nearest visible target and strongest loaded equipment are controller assistance, not model choices or additional draws.",
+    "The full tactic distribution is sampled once, in offer order. Its draw and interval are recorded; the original SDK argmax and probabilities remain untouched. No retry or tactic substitution.",
+    "Here the illustrative action draw selects Engage rather than the SDK's top back-fire. The illustrative nearest marker binds e1; loaded-weapon priority picks shotgun.",
     "Visible lava coverage is not a predicted movement outcome. There is no hit, safety or collection guarantee.",
     "This file contains no native execution outcome or model-performance claim."
   ]

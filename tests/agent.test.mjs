@@ -21,7 +21,7 @@ async function scored(f, selections = {}) {
   const p = f.agent.score(); f.pending.resolve(decisionReplies(f.agent.current, selections)); return p;
 }
 
-test("score freezes time and captures the actual complete request and untouched multi-head response", async () => {
+test("score freezes time and captures the actual complete request and untouched single-action response", async () => {
   const f = fixture(), before = f.engine.snapshot(), promise = f.agent.score();
   assert.equal(f.agent.busy, true); assert.equal(f.calls.length, 1);
   assert.strictEqual(f.agent.current.requests, f.calls[0]);
@@ -29,7 +29,7 @@ test("score freezes time and captures the actual complete request and untouched 
   const record = await promise;
   assert.strictEqual(record.responses, response);
   assert.equal(record.responses[0].raw_probabilities.action[0], 0.123456789);
-  assert.deepEqual(record.requests.map(r => Object.keys(r.questions)[0]), ["action", "aim", "item", "weapon"]);
+  assert.deepEqual(record.requests.map(r => Object.keys(r.questions)[0]), ["action"]);
   assert.ok(record.requests.every(r => r.state === record.sharedState));
   assert.equal(record.status, "scored"); assert.equal(f.actions.length, 0);
   assert.deepEqual(f.engine.snapshot(), before); assert.equal(f.agent.busy, false);
@@ -45,21 +45,24 @@ test("only an explicit step executes the resolved composite selection and measur
   await assert.rejects(f.agent.step(), /Score/);
 });
 
-test("the second model-selected target wins; code does not select first or nearest", async () => {
-  const f = fixture(); f.state.enemies.push(visible("monster_ogre", 72));
-  const record = await scored(f, { action: "left-fire", aim: "e2" });
+test("the native nearest marker selects the second enemy, not list order or a model target answer", async () => {
+  const f = fixture(); f.state.enemies[0].nearest = false;
+  f.state.enemies.push(visible("monster_ogre", 72, undefined, { nearest: true }));
+  const record = await scored(f, { action: "left-fire" });
   assert.equal(record.selected.params.ref, 72); assert.equal(record.selected.params.side, -1);
   assert.equal(record.selected.params.fire, true); assert.equal(record.selected.selection.id, "e2");
-  assert.match(record.selected.label, /e2 ogre/); await f.agent.step();
+  assert.match(record.selected.label, /nearest ogre/); await f.agent.step();
   assert.equal(f.actions[0].ref, 72);
 });
 
-for (const [action, key] of [["attack", "aim"], ["approach", "item"], ["forward", "weapon"], ["attack", "weapon"], ["wait", "weapon"]]) {
-  test(`a missing or fabricated ${key} rejects ${action}, preserving the raw response without fallback`, async () => {
-    for (const invalid of [undefined, { type: "choice", choice: "invented", probabilities: { invented: 1 } }]) {
-      const f = fixture(), p = f.agent.score(), response = decisionReplies(f.agent.current, { action });
-      response[f.calls[0].findIndex(r => r.questions[key])].answers[key] = invalid; f.pending.resolve(response);
-      await assert.rejects(p, new RegExp(`Invalid ${key} selection`));
+for (const [action, group] of [["attack", "enemies"], ["approach", "pickups"]]) {
+  test(`missing or contradictory nearest markers reject ${action} without a substitute tactic`, async () => {
+    for (const duplicate of [false, true]) {
+      const f = fixture();
+      if (duplicate) f.state[group].push(visible(f.state[group][0].kind, 89, undefined, { nearest: true }));
+      else delete f.state[group][0].nearest;
+      const p = f.agent.score(), response = decisionReplies(f.agent.current, { action }); f.pending.resolve(response);
+      await assert.rejects(p, /Automatic .* unavailable/);
       assert.strictEqual(f.agent.current.responses, response); assert.equal(f.agent.current.status, "error");
       await assert.rejects(f.agent.step(), /Score/); assert.equal(f.actions.length, 0);
     }
@@ -68,7 +71,7 @@ for (const [action, key] of [["attack", "aim"], ["approach", "item"], ["forward"
 
 test("the selected tactic ignores unrelated target answers, rather than silently turning into an attack", async () => {
   const f = fixture(), p = f.agent.score(), response = decisionReplies(f.agent.current, { action: "jump" });
-  delete response[1].answers.aim; f.pending.resolve(response);
+  response[0].answers.aim = { choice: "invented" }; f.pending.resolve(response);
   const r = await p; assert.equal(r.selected.params.ref, 0); assert.equal(r.selected.params.jump, true);
   assert.equal(r.selected.params.fire, false); await f.agent.step(); assert.equal(f.actions[0].jump, true);
 });
@@ -148,8 +151,8 @@ test("similar-view history is measured, persists across Stop, and clears on a ne
   assert.equal(f.agent.memory, null);
 });
 
-test("history is bounded and retains paired requests/responses including target choices", async () => {
+test("history is bounded and retains paired action requests/responses and separate automatic evidence", async () => {
   const f = fixture(); for (let i = 0; i < 55; i++) await scored(f);
   assert.equal(f.agent.history.length, 50); assert.equal(f.agent.history[0].id, 6); assert.equal(f.agent.history.at(-1).id, 55);
-  assert.ok(f.agent.history.every(r => r.requests[1].questions.aim && r.responses[1].answers.aim));
+  assert.ok(f.agent.history.every(r => r.requests.length === 1 && r.responses.length === 1 && r.automatic.aim.ref === 10));
 });

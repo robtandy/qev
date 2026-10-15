@@ -66,7 +66,8 @@ try {
       css:[...document.styleSheets].some(s=>s.href?.endsWith('/style.css')),
       normal:typeof qev.engine.module._qev_evaluation==='undefined',control:qev.engine.module._qev_control_version(),screen:qev.engine.module._qev_screen_version()};})()`);
   assert.equal(info.snapshot.ready, true); assert.equal(info.snapshot.paused, true); assert.equal(info.snapshot.map, "lq_e0m6"); assert.equal(info.snapshot.difficulty, 2);
-  assert.equal(info.normal, true); assert.equal(info.control, 7); assert.equal(info.screen, 3); assert.equal(info.model, false); assert.equal(info.css, true);
+  assert.equal(info.normal, true); assert.equal(info.control, 8); assert.equal(info.screen, 4); assert.equal(info.model, false); assert.equal(info.css, true);
+  assert.equal(info.snapshot.version, 5); assert.equal(info.snapshot.controlMode, "visible-assisted");
   assert.equal(new URL(info.logo).pathname, url.pathname + "brand/qev-logo.svg");
   assert.equal(info.title, "qev - quake played by a local decision model"); assert.equal(info.logoLabel, "qev");
   assert.equal(info.repo, "https://github.com/robtandy/qev"); assert.equal(info.meta.repository, "robtandy/qev");
@@ -75,6 +76,13 @@ try {
   if (options.url) assert.equal(info.meta.dirty, false, "Publish committed source, not a modified working tree");
   assert.ok(!requests.some(r => r.startsWith("https://huggingface.co/")), "Startup must not download a model");
   console.log("PASS static project-path startup: CSS/logo, verified demo, normal engine, map 6/Hard, stopped without model downloads");
+  assert.equal(await evaluate(`(async()=>{const {prepareDecision}=await import(new URL('src/decisions.js',location.href).href);
+    const s=qev.engine.snapshot(),r=prepareDecision(s);
+    return r.requests.length===1 && Object.keys(r.requests[0].questions).join(',')==='action' &&
+      r.automatic.weapon?.method==='strongest-loaded-v1' &&
+      r.automatic.aim?.ref===s.enemies.find(e=>e.nearest)?.ref && r.automatic.item?.ref===s.pickups.find(e=>e.nearest)?.ref &&
+      [...s.enemies,...s.pickups,...s.features].every(e=>typeof e.nearest==='boolean' && !('distance' in e) && !('position' in e));})()`), true);
+  console.log("PASS one action question with separate nearest-visible and strongest-loaded automatic binding evidence");
   for (const width of [1440, 375]) {
     await call("Emulation.setDeviceMetricsOverride", { width, height: 1100, deviceScaleFactor: 1, mobile: false });
     assert.equal(await evaluate(`(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
@@ -115,6 +123,10 @@ try {
     decision = await evaluate("qev.agent.history.findLast(r=>['executed','interrupted'].includes(r.status))");
     model = await evaluate("qev.model.info");
     assert.equal(decision.sampling.method, "categorical-v1");
+    assert.equal(decision.requests.length, 1); assert.equal(decision.responses.length, 1);
+    assert.deepEqual(Object.keys(decision.sampling.heads), ["action"]);
+    assert.ok(decision.automatic && decision.automaticAtApply && decision.selectedAtScore);
+    assert.equal(decision.selected.selection?.answer, undefined); assert.equal(decision.selected.weaponSelection?.answer, undefined);
     assert.ok(decision.requests.every(item => item.state.includes("Owned weapons:")));
     assert.ok(decision.execution.ticksApplied > 0 && decision.execution.ticksApplied <= decision.selected.params.ticks);
     assert.equal(await evaluate("qev.engine.snapshot().paused"), true);

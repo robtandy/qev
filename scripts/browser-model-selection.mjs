@@ -146,7 +146,7 @@ export async function checkModelSelection({ evaluate, check, until }) {
     await change('backend', 'wasm'); await loadCount(6);
     await evaluate("document.querySelector('#cancel-model').click();modelSelectionTest.loads[5].reject(new DOMException('Aborted','AbortError'))"); await idle();
     await check("model switches and backend reloads keep the single controller and configured priorities", `
-      return qev.engine.snapshot().controlMode==='player-observable' && modelSelectionTest.oldDecision.controlMode==='player-observable' &&
+      return qev.engine.snapshot().controlMode==='visible-assisted' && modelSelectionTest.oldDecision.controlMode==='visible-assisted' &&
         JSON.stringify(qev.priorityOrder)===JSON.stringify(modelSelectionTest.priorityOrder) &&
         JSON.stringify(modelSelectionTest.oldDecision.priorityOrder)===JSON.stringify(modelSelectionTest.priorityOrder);
     `);

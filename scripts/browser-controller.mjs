@@ -6,19 +6,20 @@ export async function checkController({ evaluate, check, until, onCorpse = async
     await evaluate("qev.engine.resumeAudio()"); // Previously unlocked by the trusted audio tests; host remains muted.
     await evaluate("qev.pause();qev.engine.loadMap('qev_encounter',0)");
     await evaluate("(async()=>{for(let i=0;i<90&&!qev.engine.snapshot().player.grounded;i++)await qev.engine.frame()})()");
-    await check('model-selected equipment switches once alongside the tactic, never as an automatic best-weapon picker', `
+    await check('automatic loaded equipment switches once alongside the tactic, then keeps the held gun without extra presses', `
       const {prepareDecision,resolveSelection}=await import('/src/decisions.js');
-      for(const [id,name] of [['w1','axe'],['w2','shotgun']]) {
+      await qev.engine.act(controlTest.command({weapon:1}));
+      for(const presses of [1,0]) {
         const s=qev.engine.snapshot(),r=prepareDecision(s), index=r.eligible.findIndex(c=>c.id==='forward');
-        r.selectedIndex=index;r.responses=testReplies(r.requests,index,{weapon:id});
+        r.selectedIndex=index;r.responses=testReplies(r.requests,index);
         const chosen=resolveSelection(r);await qev.engine.act(chosen.params);
         const after=qev.engine.snapshot();
-        if(after.player.weapon!==name || after.weaponPresses!==1 || after.actionTicks!==12 || chosen.params.forward!==1)
+        if(after.player.weapon!=='shotgun' || after.weaponPresses!==presses || after.actionTicks!==12 || chosen.params.forward!==1)
           throw new Error('Concurrent equipment failed '+JSON.stringify({chosen,after}));
       }
       return true;
     `);
-    await check('repeated model choices to keep the shotgun retain movement with zero repeated weapon presses', `
+    await check('repeated automatic choices to keep the shotgun retain movement with zero repeated weapon presses', `
       const {prepareDecision,rankDecision,resolveSelection}=await import('/src/decisions.js');
       for(let i=0;i<4;i++) {
         const s=qev.engine.snapshot(),r=prepareDecision(s);
@@ -73,14 +74,15 @@ export async function checkController({ evaluate, check, until, onCorpse = async
       for(let i=0;i<90&&!qev.engine.snapshot().player.grounded;i++)await qev.engine.frame();
       await qev.engine.act(controlTest.command({weapon:1}));
       for(const action of ['attack','engage']) {
-        const s=qev.engine.snapshot(),r=prepareDecision(s);
-        r.responses=testDecisionReplies(r,{action,weapon:'w1'});r.selectedIndex=rankDecision(r)[0].index;
-        const choice=resolveSelection(r), raw=JSON.stringify(r.responses), samples=[];
+        const s=qev.engine.snapshot(),samples=[];
+        // Explicit native-input fixture, not model policy: automatic equipment
+        // would switch this loaded inventory back to shotgun.
+        const choice={id:action,params:controlTest.command({ref:s.enemies.find(e=>e.nearest).ref,weapon:1,fire:true,meleeApproach:action==='engage'})};
         const executing=qev.engine.act(choice.params);
         while(qev.engine.snapshot().remaining>0){await new Promise(resolve=>setTimeout(resolve,5));samples.push(qev.engine.snapshot());}
         const after=await executing;
-        controlTest.engagement.push({before:s,requests:r.requests,responses:r.responses,selected:choice,after});
-        if(JSON.stringify(r.responses)!==raw || choice.params.forward!==0)throw new Error('Test choice was rewritten');
+        controlTest.engagement.push({fixture:'explicit-native-input',before:s,selected:choice,after});
+        if(choice.params.forward!==0)throw new Error('Raw stationary input was rewritten');
         if(after.weaponPresses!==0)throw new Error('Held axe was redundantly selected; decode the one-byte HUD value correctly');
         if(action==='attack' && after.meleeApproachTicks!==0)throw new Error('Stationary axe attack gained movement');
         if(action==='engage' && (!(after.meleeApproachTicks>0) || after.meleeApproachTicks!==after.actionTicks || !samples.some(s=>s.player.moving)))
@@ -100,31 +102,33 @@ export async function checkController({ evaluate, check, until, onCorpse = async
     await evaluate("qev.engine.loadMap('qev_encounter',0)");
     await check('engagement rechecks the current HUD weapon through a real live switch rather than freezing movement at score time', `
       const {prepareDecision,rankDecision,resolveSelection}=await import('/src/decisions.js');
-      await qev.engine.act(controlTest.command({weapon:1}));const s=qev.engine.snapshot(),r=prepareDecision(s,null,{realtime:true});
-      r.responses=testDecisionReplies(r,{action:'engage',weapon:'w1'});r.selectedIndex=rankDecision(r)[0].index;const choice=resolveSelection(r);
+      await qev.engine.act(controlTest.command({weapon:1}));const s=qev.engine.snapshot();
+      // Native mechanism fixture only: explicitly request axe, bypassing the
+      // automatic loaded-weapon policy to exercise an actual mid-command switch.
+      const choice={id:'engage',params:controlTest.command({ref:s.enemies.find(e=>e.nearest).ref,weapon:1,fire:true,meleeApproach:true,ticks:45})};
       await qev.engine.act(controlTest.command({weapon:2}));
       if(qev.engine.snapshot().player.weapon!=='shotgun')throw new Error('Fixture failed to change HUD equipment');
       const session=qev.engine.startAuto();if(!qev.engine.applyLive(choice.params,session))throw new Error('Fresh engagement rejected');
       await qev.engine.waitFor(s=>!s.actionTicksLeft);const after=qev.engine.snapshot();qev.pause();
-      controlTest.engagement.push({before:s,requests:r.requests,responses:r.responses,selected:choice,after});
+      controlTest.engagement.push({fixture:'explicit-native-input',before:s,selected:choice,after});
       return after.weaponPresses===1 && after.player.weapon==='axe' && after.meleeApproachTicks>0 && after.meleeApproachTicks<after.actionTicks;
     `);
     await evaluate("qev.engine.loadMap('qev_encounter',0)");
-    await check('a controlled distribution fixture executes sampled non-argmax tactic and equipment while preserving the SDK response', `
-      const {Agent}=await import('/src/agent.js');let original;const draws=[0.125,0.125];
+    await check('a controlled distribution samples only the non-argmax tactic, with automatic equipment and untouched SDK response', `
+      const {Agent}=await import('/src/agent.js');let original;const draws=[0.125];
+      await qev.engine.act(controlTest.command({weapon:1}));
       const model={info:{model:'synthetic-sampling-fixture'},async decideMany(){
         const r=agent.current,responses=testDecisionReplies(r,{action:'wait',weapon:'w2'});
         const action=responses[0].answers.action;
         action.probabilities[action.choice]=0.75;action.probabilities[r.eligible.find(c=>c.id==='forward').optionId]=0.25;
-        const weapon=responses.find(r=>r.answers.weapon).answers.weapon;weapon.probabilities={w1:0.25,w2:0.75};
         original=JSON.stringify(responses);return responses;
       }};
       const agent=new Agent({engine:qev.engine,getModel:()=>model,random:()=>draws.shift()});
       const r=await agent.score();await agent.step();controlTest.sampling=r;
-      return r.selected.id==='forward' && r.selected.params.weapon===1 && r.after.player.weapon==='axe' &&
+      return r.selected.id==='forward' && r.selected.params.weapon===2 && r.after.player.weapon==='shotgun' &&
         r.execution.ticksApplied===12 && r.execution.weaponPresses===1 && JSON.stringify(r.responses)===original &&
-        r.selected.optionId!==r.responses[0].answers.action.choice && r.selected.weaponSelection.id!==r.selected.weaponSelection.answer.choice &&
-        r.sampling.complete && r.sampling.heads.action.draw===0.125 && r.sampling.heads.weapon.draw===0.125 && draws.length===0;
+        r.selected.optionId!==r.responses[0].answers.action.choice && !r.selected.weaponSelection.answer &&
+        r.sampling.complete && r.sampling.heads.action.draw===0.125 && Object.keys(r.sampling.heads).join(',')==='action' && draws.length===0;
     `);
     await evaluate("qev.engine.loadMap('qev_encounter',0)");
     await check('malformed or contradictory engagement inputs reject without substituting a raw action', `
@@ -207,13 +211,13 @@ export async function checkController({ evaluate, check, until, onCorpse = async
       controlTest.axe=s;controlTest.axeRequests=r.requests;
       return s.player.weapon==='axe' && r.requests.every(request=>request.state===r.sharedState &&
         request.state.includes('axe (contact-only melee, not ranged), no ammo needed') && request.state.includes('crosshair not melee contact')) &&
-        r.grounding.weapon.criteria.w2.includes('ranged pellets') && r.grounding.weapon.criteria.w1.includes('(held)');
+        r.requests.length===1 && r.automatic.weapon.name==='shotgun';
     `);
     await check('every native observation request distinguishes owned inventory from the held axe and visible pickups', `
       const {prepareDecision}=await import('/src/decisions.js');
       const s=qev.engine.snapshot(),r=prepareDecision(s),expected='Owned weapons: '+s.player.weapons.map(w=>w.name).join(', ')+'.';
       return s.player.weapon==='axe' && s.player.weapons.some(w=>w.id===2) &&
-        r.requests.every(request=>request.state.includes(expected)&&request.state.includes('held axe')&&request.state.includes('axe last resort'));
+        r.requests.every(request=>request.state.includes(expected)&&request.state.includes('held axe')&&request.state.includes('Strongest loaded weapon auto'));
     `);
     await check('raw firing remains an explicit input even when the only visible enemy object is a corpse', `
       await qev.engine.act(controlTest.command({fire:true,ticks:1}));
@@ -240,7 +244,7 @@ export async function checkController({ evaluate, check, until, onCorpse = async
       controlTest.inventoryPickup={fixture:true,before,oldRequests:old.requests,staging,after,nextRequests:next.requests};
       const expected='Owned weapons: '+after.player.weapons.map(w=>w.name).join(', ')+'.';
       return after.player.weapons.some(w=>w.id===3) && next.requests.every(request=>request.state.includes(expected)) &&
-        !!next.grounding.weapon.criteria.w3 && !oldLine.includes('double shotgun') &&
+        next.automatic.weapon?.weapon===3 && !oldLine.includes('double shotgun') &&
         old.sharedState.split('\\n').find(line=>line.startsWith('Owned weapons:'))===oldLine;
     `);
     return await evaluate(`({fixture:true,purpose:'Real renderer/physics with explicit test choices; not model gameplay or a skill benchmark',

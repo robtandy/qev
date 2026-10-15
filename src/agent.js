@@ -2,6 +2,7 @@ import { prepareDecision, rankDecision, resolveSelection, DEFAULT_DECISION_FORMA
 import { DEFAULT_PRIORITY_ORDER, validatePriorityOrder } from "./objective.js";
 import { ScreenMemory } from "./screen.js";
 import { ObservationMemory } from "./perception.js";
+import { automaticPlan, bindAutomatic } from "./automatic.js";
 
 // Actual camera-cleanup ticks observed in this window, including neutral live
 // time after a target lease. Not movement, attack ticks, or extra Step frames.
@@ -137,6 +138,7 @@ export class Agent {
         ? ["Laya reached its 512-token input limit; some text may have been truncated. No action applied."] : [];
       if (record.warnings.length) throw new Error(record.warnings[0]);
       record.selected = resolveSelection(record, { random: this.#random });
+      record.selectedAtScore = structuredClone(record.selected);
       record.status = "scored";
       this.scoredModel = model;
       return record;
@@ -162,10 +164,16 @@ export class Agent {
       return false;
     }
     record.checkedAt = structuredClone(now);
-    const choice = record.selected;
+    record.automaticAtApply = automaticPlan(now);
+    let choice;
+    try { choice = bindAutomatic(record.selected, record.automaticAtApply); }
+    catch (error) {
+      record.status = "rejected"; record.error = error.message; this.onChange(); return false;
+    }
+    record.selected = choice;
     this.observeObservation(now);
-    // Structural bounds, current visibility and session freshness only. Never
-    // choose another target/tactic or test hidden geometry on the model's behalf.
+    // The model chose the tactic. Approved nearest-visible/strongest-loaded
+    // bindings use the fresh application snapshot; no action is substituted.
     if (!this.engine.applyLive(choice.params, this.liveSession)) {
       record.status = "rejected";
       record.error = "The chosen visible contact or structural validation changed before application.";
@@ -240,13 +248,15 @@ export class Agent {
       this.onChange();
       throw new Error("The world changed. Score a fresh observation.");
     }
-    const choice = record.selected;
-    if (!choice?.allowed) throw new Error("The selected action is invalid.");
+    if (!record.selected?.allowed) throw new Error("The selected action is invalid.");
     this.executing = true;
     record.status = "stepping";
     const generation = this.generation;
     this.onChange();
     try {
+      record.automaticAtApply = automaticPlan(now);
+      record.selected = bindAutomatic(record.selected, record.automaticAtApply);
+      const choice = record.selected;
       const after = await this.engine.act(choice.params);
       record.after = structuredClone(after);
       record.execution = { ticksApplied: after.actionTicks ?? after.tick - record.before.tick, weaponPresses: after.weaponPresses ?? null, meleeApproachTicks: after.meleeApproachTicks ?? null,

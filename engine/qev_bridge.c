@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * qev's single player-observable controller. No game data is embedded.
- * Labels are renderer/mixer-assisted, NOT RGB/audio recognition. No route/LOS
- * probes, enemy coordinates, health, AI goals, or hidden target tracking.
+ * qev's single visible-assisted controller. No game data is embedded.
+ * Labels are renderer/mixer-assisted, NOT RGB/audio recognition. Approved
+ * visible-only distance selection is controller assistance, not a model input.
+ * No route/LOS probes, hidden health, AI goals, or through-wall tracking.
  */
 #include "quakedef.h"
 #include "d_local.h"
 #include "qev_recenter.h"
+#include "qev_nearest.h"
 #include <stdint.h>
 #include <limits.h>
 #include <emscripten/emscripten.h>
@@ -38,6 +40,7 @@ static unsigned char view_known[MAX_EDICTS], view_groups[MAX_EDICTS];
 /* Opaque references last ONLY through uninterrupted visible frames. Never export
  * entity slots/generations; never reacquire a lost target behind a wall. */
 static int view_refs[MAX_EDICTS];
+static int view_nearest[2]; /* Current rendered nearest pickup / active enemy only. */
 static int audio_access;
 typedef struct { const char *kind; int direction, loudness, tick; } heard_t;
 static heard_t heard[8];
@@ -141,11 +144,11 @@ static int view_available(void) {
     return qev_PixelsView()->valid && view_tick == tick && key_dest == key_game && !cl.intermission &&
         scr_con_current <= 0 && scr_centertime_off <= 0 && !sb_showscores && !cl.paused && !scr_drawloading && !scr_drawdialog;
 }
-EMSCRIPTEN_KEEPALIVE int qev_screen_version(void) { return 3; }
-EMSCRIPTEN_KEEPALIVE int qev_control_version(void) { return 7; }
+EMSCRIPTEN_KEEPALIVE int qev_screen_version(void) { return 4; }
+EMSCRIPTEN_KEEPALIVE int qev_control_version(void) { return 8; }
 EMSCRIPTEN_KEEPALIVE void qev_audio_access(int enabled) { audio_access = enabled == 1; }
 void qev_BeginView(int unsupported) {
-    qev_PixelsReset(); view_tick = -1;
+    qev_PixelsReset(); view_tick = -1; memset(view_nearest, 0, sizeof(view_nearest));
     memset(view_known, 0, sizeof(view_known)); memset(view_kinds, 0, sizeof(view_kinds));
     if (!ready() || cl.intermission) { view_reason = "No active player view"; goto unavailable; }
     if (unsupported || lcd_x.value) { view_reason = "Unsupported debug render"; goto unavailable; }
@@ -203,10 +206,22 @@ void qev_EndView(void) {
     if (v->valid) {
         view_tick = tick + 1; view_frame++;
         int covered = key_dest != key_game || scr_con_current > 0 || scr_centertime_off > 0 || sb_showscores || cl.paused || scr_drawloading || scr_drawdialog;
+        qev_nearest_t nearest[2]; qev_NearestReset(&nearest[0]); qev_NearestReset(&nearest[1]);
         for (int i = 2; i < MAX_EDICTS; i++) {
-            if (covered || !view_kinds[i] || !v->objects[i].count) view_refs[i] = 0;
-            else if (!view_refs[i]) { if (next_ref == INT_MAX) next_ref = 0; view_refs[i] = ++next_ref; }
+            if (covered || !view_kinds[i] || !v->objects[i].count) { view_refs[i] = 0; continue; }
+            if (!view_refs[i]) { if (next_ref == INT_MAX) next_ref = 0; view_refs[i] = ++next_ref; }
+            int group = view_groups[i];
+            if (group > 1 || (group == 1 && qev_FallenAnimation(view_poses[i]))) continue;
+            /* Read CURRENT client/render placement only AFTER final visible pixels
+             * are confirmed. Brush model bounds can be offset from their origin.
+             * This is model-center distance, not a route, contact or hit test. */
+            entity_t *entity = &cl_entities[i]; vec3_t center;
+            if (!entity->model) continue;
+            for (int axis = 0; axis < 3; axis++)
+                center[axis] = entity->origin[axis] + (entity->model->mins[axis] + entity->model->maxs[axis]) * 0.5f;
+            qev_NearestConsider(&nearest[group], i, 1, r_refdef.vieworg, center);
         }
+        view_nearest[0] = nearest[0].slot; view_nearest[1] = nearest[1].slot;
     } else { view_reason = "Incomplete pixel frame"; memset(view_refs, 0, sizeof(view_refs)); }
 }
 static const qev_pixel_object_t *contact(int ref) {
@@ -272,7 +287,7 @@ void qev_WorldChanged(void) {
     eval_distance = eval_displacement = 0;
     eval_move_ticks = eval_attack_ticks = eval_motion_requested = eval_anchor_valid = 0;
 #endif
-    memset(view_refs, 0, sizeof(view_refs));
+    memset(view_refs, 0, sizeof(view_refs)); memset(view_nearest, 0, sizeof(view_nearest));
     qev_PixelsReset(); view_tick = -1; view_reason = "World changed; awaiting rendered frame";
     clear_action(); audio_pause(1);
 }
@@ -286,10 +301,13 @@ void qev_PreRender(void) {
 }
 static void screen_objects_json(const qev_pixel_view_t *v, int group, int available) {
     int selected[qev_MAX_SEEN], count = 0, total = 0, i, j, pos;
+    int nearest = group < 2 ? view_nearest[group] : 0;
     if (available) for (i = 2; i < MAX_EDICTS; i++) {
         if (!view_kinds[i] || view_groups[i] != group || !v->objects[i].count || !view_refs[i]) continue;
         total++; pos = 0;
-        while (pos < count && v->objects[selected[pos]].count >= v->objects[i].count) pos++;
+        /* Include the automatic target even if tiny; retain coverage ordering
+         * for the remaining slots. Never silently choose an omitted object. */
+        while (pos < count && i != nearest && (selected[pos] == nearest || v->objects[selected[pos]].count >= v->objects[i].count)) pos++;
         if (pos >= qev_MAX_SEEN) continue;
         if (count < qev_MAX_SEEN) count++;
         for (j = count - 1; j > pos; j--) selected[j] = selected[j-1];
@@ -303,6 +321,7 @@ static void screen_objects_json(const qev_pixel_view_t *v, int group, int availa
         if (i) append(",");
         append("{\"ref\":%d,\"kind\":", view_refs[slot]); quoted(view_kinds[slot]);
         append(",\"pose\":"); quoted(view_poses[slot] ? view_poses[slot] : "unknown");
+        append(",\"nearest\":%s", slot == nearest ? "true" : "false");
         append(",\"visible\":true,\"screen\":{\"bounds\":[%.4f,%.4f,%.4f,%.4f],\"pixels\":%d,\"aimOverlap\":%s,\"clipped\":%s,\"sameKindCount\":%d}}",
             (double)o->left/v->width, (double)o->top/v->height, (double)o->right/v->width, (double)o->bottom/v->height,
             o->count, o->at_aim ? "true" : "false", o->clipped ? "true" : "false", same_kind);
@@ -329,7 +348,7 @@ static void screen_json(void) {
 }
 EMSCRIPTEN_KEEPALIVE const char *qev_snapshot(void) {
     used = 0;
-    append("{\"version\":4,\"controlMode\":\"player-observable\",\"epoch\":%d,\"tick\":%d,\"ready\":%s,\"paused\":%s,\"remaining\":%d,\"owned\":%s",
+    append("{\"version\":5,\"controlMode\":\"visible-assisted\",\"epoch\":%d,\"tick\":%d,\"ready\":%s,\"paused\":%s,\"remaining\":%d,\"owned\":%s",
         epoch, tick, ready() ? "true" : "false", paused ? "true" : "false", remaining, owned ? "true" : "false");
     append(",\"controlSession\":%d,\"actionSerial\":%d,\"actionTicks\":%d,\"actionTicksLeft\":%d,\"weaponPresses\":%d,\"meleeApproachTicks\":%d,\"stopReason\":", control_session, action_serial, action_ticks, lease, weapon_presses, melee_approach_ticks);
     if (stop_reason) quoted(stop_reason); else append("null");

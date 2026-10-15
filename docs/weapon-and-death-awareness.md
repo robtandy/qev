@@ -1,5 +1,9 @@
 # Weapon reach and visible enemy death
 
+**Current policy:** [one action question with automatic bindings](automatic-bindings.md).
+The reach/death fixes below remain; historical multi-head sampling has since been replaced
+by nearest-visible targets and a fixed strongest-loaded weapon priority.
+
 ## Why the earlier cues were insufficient
 
 Two concrete gaps were found in the controller input:
@@ -13,9 +17,9 @@ Two concrete gaps were found in the controller input:
    map-6 traces include repeated aimed attacks at large, generic-labelled fallen models.
 
 These are information/affordance fixes, not evidence that a stock model now plays well.
-These changes introduced no tactical replacement. In a subsequent user-approved change,
-choice heads are now sampled rather than always taking the SDK argmax, while preserving original
-responses and a replayable draw ledger. See [sampling and view recovery](sampling-and-view-recovery.md). Sustained-play results are kept separately in [gameplay-validation.md](gameplay-validation.md).
+These changes initially introduced no tactical replacement. A later change introduced full
+distribution sampling; the current controller samples only the action and records approved
+automatic target/equipment choices separately, preserving original responses and the draw ledger. See [sampling and view recovery](sampling-and-view-recovery.md). Sustained-play results are kept separately in [gameplay-validation.md](gameplay-validation.md).
 
 ## Static weapon knowledge, not target-distance telemetry
 
@@ -35,47 +39,48 @@ The **actual held weapon from the current HUD** and its reach description appear
 state of every request, even if there is only one owned weapon and no equipment question.
 The **complete owned inventory** and all ammo-pool counts now accompany it in every question,
 not only the equipment head. See the inventory follow-up below.
-Every offered weapon also retains its reach, ammunition fact and held marker. Empty and held
-weapons are not filtered; a failed switch is reported, not treated as a successful equip.
+The static profiles retain each weapon's reach/ammo/switch facts. Empty and held weapons remain
+in inventory evidence; automatic selection skips unusable guns. A refused switch is reported,
+not treated as a successful equip.
 Tactic labels say **attack**, not universally **fire**: the native attack button can swing an
 axe or fire a gun. Legacy internal `fire` / `forward-fire` IDs and the `fire` input bit remain
 stable; they do not assert a ranged shot or a hit.
 
-No entity distance, in-range flag, hit test, raycast, or future projectile simulation is added.
-Apparent size is not depth, and crosshair overlap **does not establish melee contact**. A model
-can still choose an ineffective stationary axe swing; the executor does not secretly advance
-or choose a gun instead for **Hold position and attack** or raw attacks.
+No entity distance, in-range flag, hit test, raycast or future simulation enters model input.
+The separate approved native selector compares distance only to renderer-confirmed visible
+objects, exporting a marker rather than coordinates/ranges. Apparent size is not depth, and
+crosshair overlap **does not establish melee contact**. Stationary/raw attacks never gain
+secret advance; their equipment follows the same disclosed automatic policy as other tactics.
 
 ### Complete inventory and best-weapon guidance (user-approved follow-up)
 
-The user requested the best weapon and confirmed **Keep weapon sampling**, rather than making
-weapons an argmax exception. Previously, only the equipment question listed all owned guns;
-other questions saw just the held weapon and ammo totals. The shared state now includes:
+The earlier inventory follow-up kept weapon sampling. The subsequent request for automatic
+strongest-loaded equipment supersedes that preference and removes the equipment question.
+The single action state still retains all owned guns, not just held equipment and ammo totals:
 
 ```text
 HUD: ... held axe (contact-only melee, not ranged), no ammo needed; shells/nails/rockets/cells 20/80/8/0; ...
-Owned weapons: axe, shotgun, double shotgun, nailgun, super nailgun, grenade launcher, rocket launcher, lightning. Use best loaded gun; axe last resort.
+Owned weapons: axe, shotgun, double shotgun, nailgun, super nailgun, grenade launcher, rocket launcher, lightning. Strongest loaded weapon auto.
 ```
 
-The list uses the same validated, deduplicated HUD entries as the equipment offers. Ammo or a
+The list uses the same validated, deduplicated HUD entries as automatic equipment selection. Ammo or a
 visible weapon pickup does **not** establish ownership. A real pickup changes the next inventory;
 historical requests remain unchanged. Empty/missing inventory is reported as **not reported**,
 not guessed from ammunition. Single-weapon inventories remain visible without an artificial
 weapon question. The held marker describes actual equipment, not a refused requested switch.
 
-The equipment question asks for the strongest effective loaded gun, considering reach and
-self-harm. Static descriptions distinguish the weak axe and stronger double shotgun/super
-nailgun. With only one shell/nail, those upgrades warn that switching needs two; already-held
-one-round weapons can still fire their ordinary native fallback. This is game-rule knowledge,
-not a server-weapon check, range oracle, fixed weapon ranking or ammo veto.
+Automatic equipment follows lightning > rocket launcher > grenade launcher > super nailgun >
+nailgun > double shotgun > shotgun > axe, using known owned/loaded weapons. This is a declared
+power order, **not** an optimal range/self-harm/underwater-safety policy. Double shotgun and
+super nailgun require two relevant rounds to switch; already-held one-round upgrades can use
+their native fallback. This uses static rules and HUD ammo, not server weapon state.
 
-**Sampling is unchanged**, including lower-rated, held and empty options. Instructions cannot
-guarantee that the model rates the best weapon highest or that sampling selects it. Neither
-scores nor probabilities are rewritten, and no rejected draw is retried with a better gun.
+Only **action** is sampled. Equipment has no fake model probabilities or draw. Native execution
+rechecks the current held weapon to avoid redundant impulses; refusal is not retried mid-command.
 
 To fit Laya's fixed context, shared visual prose factors repeated identical attributes, e.g.
 `center large attacking: grunt, ogre`. Every capped kind/count remains; unlike groups and
-pose/trend descriptions are not merged. Individual geometry stays in target heads/traces.
+pose/trend descriptions are not merged. Individual image measurements stay in traces.
 Redundant prompt wording is shortened without dropping priorities, inventory or uncertainty.
 Crowded all-eight-weapon tests cover loaded, empty, one-round and axe-held inventories; all
 question/option extension canaries must remain readable. Runtime limit hits still fail closed.
@@ -83,16 +88,17 @@ question/option extension canaries must remain readable. Runtime limit hits stil
 ### Explicit engagement (user-approved follow-up)
 
 Because stronger range wording alone did not correct recorded distant-target axe choices, the
-user approved an explicit **Engage: aim and attack, close in with axe** action. It is offered alongside,
+user approved an explicit engagement action, now labeled **Engage nearest enemy; close in with axe**. It is offered alongside,
 not instead of, stationary attack. Only this choice carries `params.meleeApproach: true`:
 
-- Enemy and concurrent weapon selections come from their explicit model distributions. Raw
-  SDK argmax/probabilities are preserved alongside the samples; no tactical replacement is made.
+- The tactic comes from the sampled action distribution. Enemy and concurrent weapon bindings
+  are now automatic, recorded separately from the unchanged SDK action answer/probabilities.
 - Each execution tick checks the **current HUD weapon**. With the axe, ordinary forward input
   accompanies visible-pixel aim and the normal attack button. With a gun, engagement attacks
   without that advance. A delayed/refused switch or native fallback does not freeze the behavior
   to what was held when scoring.
-- There is no distance/contact oracle or pathfinder. It advances for the bounded lease, subject
+- Advance has no contact/range oracle or pathfinder. Native distance chooses only the visible
+  target; it does not decide when contact is achieved. Engagement advances for its lease, subject
   to actual collisions, and may be blocked or unsafe. Reaching/contacting/killing is not guaranteed.
 - Visual loss, visible death, Stop and the existing tick/wall leases release movement/attack;
   no replacement target or gun is selected by code. Bounded pitch-only return to level can follow
@@ -144,12 +150,14 @@ RGB recognition or proof that a human would recognize a tiny/partially occluded/
 ## Target lifetime and memory
 
 Dying/corpse contacts remain in the original snapshot, visual descriptions and trace. Only the
-**active-enemy aim affordance** is removed. Unknown/hurt/downed enemies remain eligible; no
-nearest/weakest/best-target ranking is introduced. Raw fire, movement and equipment choices remain.
+**active-enemy aim affordance** is removed. Unknown/hurt/downed enemies remain eligible for
+nearest-visible selection; there is no hidden-health/weakest-enemy ranking. Raw fire and movement remain.
 
 A held targeted attack ends with `Chosen enemy is visibly dead or dying.` when that appearance
-becomes visible. The whole command releases; no other enemy is substituted. A response scored
-while the target appeared alive is rejected if the current rendered pose has since fallen.
+becomes visible. The whole held command releases; no other enemy is substituted mid-lease.
+At application, before starting a new command, automatic binding refreshes to the current nearest
+eligible enemy. If none remains, reject without a new tactic or draw. A direct stale corpse
+reference is still rejected by native validation.
 Loss of pixels still means loss of visibility, **not** knowledge of an unseen death.
 Released pixel aiming and finished explicit look-up/down commands have bounded pitch-only recovery toward level, so the view does not
 stay tilted toward a former target. This never retains fire/movement or selects another enemy.
@@ -163,7 +171,7 @@ level progress only: they do not prove that this target died or attribute every 
 
 - `tests/inventory.test.mjs`: all 255 nonempty inventory subsets across shared requests,
   ammo/pickups versus ownership, new pickups/resets/refused switches, static switch requirements,
-  unchanged lower-ranked weapon sampling, and lossless factoring of visible descriptions.
+  fixed loaded-power selection for all subsets, and lossless factoring of visible descriptions.
 - `tests/engagement.test.mjs`: explicit goal binding, unchanged stationary/raw choices, optional
   native command bit, malformed inputs, no range queries, and per-command execution accounting.
 - `tests/combat-awareness.test.mjs`: shared reach facts, axe-only inventory, refused switches,
@@ -177,12 +185,12 @@ level progress only: they do not prove that this target died or attribute every 
   switch. Engagement checks also prove actual axe-driven translation, no injected advance for
   stationary/ranged attacks, current-HUD behavior through a switch, and malformed-goal rejection. These are explicit fixture commands, **not model gameplay**. Evidence is written to
   ignored `build/combat-awareness-native.json` and `build/combat-awareness-corpse.png`.
-- `scripts/browser-screen.mjs`: real-Laya per-head budgets and **176** instruction/option
+- `scripts/browser-screen.mjs`: real-Laya single-action budgets and **84** instruction/option
   canaries across four full-inventory/ammunition cases; no silent clipping to make descriptions fit.
 - `scripts/browser-controller.mjs` also checks that a real double-shotgun pickup appears in every
   subsequent question's inventory while the pre-pickup request remains unchanged. This is a native
   input/renderer fixture, not a model-controlled pickup or a skill benchmark.
 
 All browser checks launch and verify `--mute-audio` before the app loads. Normal gameplay still
-supports sound. The normal engine requires screen capability **3**, control capability **7**;
-exported traces are version **14**. Reload the app after rebuilding the engine.
+supports sound. The normal engine requires screen capability **4**, control capability **8**;
+exported traces are version **15**. Reload the app after rebuilding the engine.

@@ -119,7 +119,7 @@ test("an engine fault rejects waits before querying an exited WASM instance or t
 });
 
 function inputFixture() {
-  const state = { ready: true, alive: true, paused: true, epoch: 1, tick: 10, remaining: 0, controlMode: "player-observable" }, calls = [];
+  const state = { ready: true, alive: true, paused: true, epoch: 1, tick: 10, remaining: 0, controlMode: "visible-assisted" }, calls = [];
   const module = { UTF8ToString: x => x, _qev_snapshot: () => JSON.stringify(state),
     _qev_command(...values) { calls.push(["command", ...values]); return 1; },
     _qev_live_command(...values) { calls.push(["live-command", ...values]); return 1; } };
@@ -130,7 +130,7 @@ const input = () => ({ epoch: 1, tick: 10, ref: 72, forward: 1, side: 0, up: 0, 
 test("there is one command boundary, with no assistance or geometry-probe API", () => {
   const { engine } = inputFixture();
   assert.equal(engine.setAssistance, undefined); assert.equal(engine.probe, undefined);
-  assert.equal(engine.snapshot().controlMode, "player-observable");
+  assert.equal(engine.snapshot().controlMode, "visible-assisted");
   assert.equal(engine.snapshot().assistance, undefined);
 });
 

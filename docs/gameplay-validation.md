@@ -1,23 +1,30 @@
 # Sustained gameplay validation
 
-## Current status: **not reliable** — all six latest inventory-follow-up episodes failed
+## Sustained play remains **unproven** — six historical inventory-follow-up episodes failed
 
 Unit tests and successful input application are not evidence of a competent player. The
 recorded stock Laya/Kev policies have not established reliable sustained play on **lq_e0m6 / Hard**.
 Do not describe this working tree as reliably navigating, clearing levels, or “kicking butt.”
 
-The user has now replaced the earlier **exact top choice** requirement with **probability
-sampling**. Each used choice head is sampled once from its full public distribution, normalizing
-only rounding. Original SDK answers/probabilities and replayable draws remain inspectable.
-There is no tactical reweighting, rejected-draw retry, scripted tactic or hidden geometry.
-Earlier top-choice runs below remain historical results, not tests of the new sampling policy. No tested gameplay run used God mode, extra health/ammo, or a reduced skill.
+The current [automatic-binding policy](automatic-bindings.md) samples only the action and uses
+nearest renderer-confirmed visible targets plus fixed strongest-loaded equipment. It supersedes
+both strict top-choice execution and the later multi-head target/weapon sampling. Only the native
+visible selector may compare object distance; positions/ranges never enter the model. There is
+no tactical reweighting, rejected-draw retry, hidden target or scripted tactic.
+
+The sustained results below are **historical policies**, not rerun or relabeled as current results.
+The new policy has passed real-engine/real-Laya smoke checks and one illustrative 12-second Hard
+map-6 episode (73 applications, 2 scoreboard kills, alive at 42 health). That is not the minute-long
+gate, a matched comparison or proof of improved survival. The sustained six-run gate has **not**
+been rerun for automatic bindings. No reported gameplay run used God mode, extra health/ammo or
+reduced skill. Native fixtures and synthetic token-budget checks are reported separately.
 
 ## Reproduce
 
 ```sh
 npm run setup:demo
-npm run test:gameplay -- --model=laya --runs=3 --seconds=60 --label=inventory-laya-map6
-npm run test:gameplay -- --model=kev-0.8b --runs=3 --seconds=60 --label=inventory-kev-map6
+npm run test:gameplay -- --model=laya --runs=3 --seconds=60 --label=automatic-laya-map6
+npm run test:gameplay -- --model=kev-0.8b --runs=3 --seconds=60 --label=automatic-kev-map6
 ```
 
 The script builds a **separate** `build/engine-evaluation/` engine and serves it only through
@@ -49,7 +56,7 @@ change `passed: false` or the failure list. The strict commands above exit nonze
 Each run saves snapshots, unmodified decision records, samples, screenshots and an explicit
 result under ignored `build/gameplay/<label>/`. Those files/weights/assets are not published.
 
-## Latest results: complete inventory and best-weapon prompt guidance
+## Latest historical sustained results: complete inventory and best-weapon prompt guidance
 
 The user requested better weapon use and confirmed **Keep weapon sampling**. Every question
 now receives the full HUD-owned inventory and ammo pools, not merely the held weapon. Static
@@ -259,7 +266,7 @@ never moved under input and died around 31 seconds. The Kev baseline backed into
 then spent a minute with zero kills/attack input. These are diagnostic examples, not a
 controlled performance comparison or statistical improvement claim.
 
-## Changes made and what they establish
+## Historical changes and what their evidence establishes
 
 - Added real sustained-play measurement rather than asserting only that an action applied.
 - Normal run input replaces a walking-speed handicap; Quake still applies its normal speed cap.

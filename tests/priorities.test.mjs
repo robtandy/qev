@@ -83,13 +83,13 @@ for (const decisionFormat of ["choice", "noul"]) {
       assert.ok(Object.isFrozen(record.priorityOrder) && Object.isFrozen(record.objectives));
       assert.ok(record.sharedState.startsWith(prefix));
       assert.ok(record.candidates.every(c => c.state.startsWith(prefix)));
-      assert.deepEqual(requestsFor(record.eligible, record.sharedState, decisionFormat, record.grounding), record.requests);
+      assert.deepEqual(requestsFor(record.eligible, record.sharedState, decisionFormat), record.requests);
       for (const request of record.requests) {
         assert.ok(request.state.startsWith(prefix));
         assert.equal(request.state.match(/WIN/g).length, 1);
         for (const [i, text] of expected.entries()) assert.ok(request.state.includes(`${i + 1}. ${text}`));
         const action = request.questions.action || request.questions.favorable;
-        if (action) assert.match(action.instructions, /listed priorities, highest first/);
+        if (action) assert.match(action.instructions, /priorities, highest first/);
         assert.doesNotMatch(JSON.stringify(request), /only after survival needs|[Ee]xploration is secondary|before exploring|Never risk life for novelty/);
       }
     }

@@ -15,8 +15,8 @@ function selected(s, selections, format = "choice") {
   return { record: r, choice: resolveSelection(r) };
 }
 
-test("one player-observable controller replaces all legacy modes/modules", () => {
-  assert.equal(CONTROL_MODE, "player-observable");
+test("one visible-assisted controller replaces all legacy modes/modules", () => {
+  assert.equal(CONTROL_MODE, "visible-assisted");
   for (const path of ["assistance.js", "navigation.js", "unassisted.js"]) assert.equal(existsSync(new URL(`../src/${path}`, import.meta.url)), false);
   const r = prepare(observation()); assert.equal(r.controlMode, CONTROL_MODE); assert.equal(r.assistance, undefined);
   assert.equal(r.navigation, undefined); assert.equal(r.steering, undefined); assert.equal(r.offerPolicy, OFFER_POLICY);
@@ -26,15 +26,14 @@ test("one player-observable controller replaces all legacy modes/modules", () =>
   }
 });
 
-test("the full unfiltered menu uses one shared state and separate explicit target/item/weapon choices", () => {
+test("the full unfiltered tactic menu uses one question and separate automatic binding evidence", () => {
   const r = prepare(observation());
-  assert.equal(r.requests.length, 4); assert.ok(r.requests.every(request => request.state === r.sharedState));
+  assert.equal(r.requests.length, 1); assert.ok(r.requests.every(request => request.state === r.sharedState));
   assert.equal(r.candidates.length, 20); assert.equal(r.eligible.length, r.candidates.length);
   assert.ok(r.eligible.every(c => c.allowed && !c.geometry && !c.route && !c.offerNote));
   assert.deepEqual(Object.keys(r.requests[0].questions.action.criteria), r.eligible.map(c => c.optionId));
-  assert.deepEqual(Object.keys(r.grounding.aim.criteria), ["e1"]);
-  assert.deepEqual(Object.keys(r.grounding.item.criteria), ["p1"]);
-  assert.deepEqual(Object.keys(r.grounding.weapon.criteria), ["w1", "w2"]);
+  assert.equal(r.automatic.aim.id, "e1"); assert.equal(r.automatic.item.id, "p1"); assert.equal(r.automatic.weapon.weapon, 2);
+  assert.equal(r.grounding, undefined);
   assert.ok(r.eligible.every(c => c.params.ticks === 12));
   assert.ok(prepareDecision(observation(), null, { realtime: true }).eligible.every(c => c.params.ticks === 45));
 });
@@ -60,9 +59,9 @@ test("relative movement/look conventions and explicit jump/swim/weapon inputs ma
   assert.equal(get("look-up").pitchRate, -60); assert.equal(get("look-down").pitchRate, 60);
   assert.equal(get("jump").jump, true); assert.equal(get("jump").forward, 1);
   assert.equal(get("swim-up").up, 1); assert.equal(get("swim-down").up, -1);
-  assert.ok(list.every(c => c.params.weapon === null), "every tactic awaits the concurrent explicit weapon answer");
+  assert.ok(list.every(c => c.params.weapon === null), "every tactic awaits the concurrent automatic weapon binding");
   assert.ok(list.every(c => c.id !== "weapon"), "equipment must not consume a separate action");
-  assert.equal(get("attack").ref, null, "no nearest/first-target default");
+  assert.equal(get("attack").ref, null, "the automatic binding is resolved separately from the offered tactic");
   assert.equal(get("fire").ref, 0); assert.equal(get("fire").fire, true);
   assert.ok(list.every(c => Math.hypot(c.params.forward, c.params.side) <= 1));
 });
@@ -72,7 +71,7 @@ test("no contacts does not imply safety and never removes blind firing or locomo
   const r = prepare(s);
   for (const id of ["fire", "forward-fire", "left-fire", "right-fire", "back-fire", "forward", "jump", "swim-up", "wait"]) assert.ok(r.eligible.some(c => c.id === id));
   assert.ok(r.eligible.every(c => c.params.ref === 0));
-  assert.match(r.sharedState, /Unseen unknown/); assert.equal(r.grounding.aim, undefined);
+  assert.match(r.sharedState, /Unseen unknown/); assert.equal(r.automatic.aim, null);
 });
 
 test("hidden, stale, unsupported and malformed visual contacts never produce target capabilities", () => {
@@ -85,17 +84,17 @@ test("hidden, stale, unsupported and malformed visual contacts never produce tar
 
 test("skipping an invalid screen row cannot bind its native reference to a different visible object", () => {
   const s = observation(); s.enemies[0].screen.pixels = 0;
-  s.enemies.push(visible("monster_ogre", 77));
+  s.enemies.push(visible("monster_ogre", 77, undefined, { nearest: true }));
   const { choice } = selected(s, { action: "attack", aim: "e2" });
   assert.equal(choice.params.ref, 77);
 });
 
-for (const format of ["choice", "noul"]) test(`${format} preserves explicit weapon/item choices even when empty or already owned`, () => {
+for (const format of ["choice", "noul"]) test(`${format} uses loaded equipment and nearest pickup without a health/need veto`, () => {
   const s = observation(); s.player.weapons.push({ id: 8, name: "lightning" }); s.player.cells = 0;
   let result = selected(s, { action: "forward", weapon: "w8" }, format);
-  assert.equal(result.choice.params.weapon, 8); assert.equal(result.choice.params.ref, 0);
-  assert.equal(result.choice.params.forward, 1); assert.equal(result.choice.weaponSelection.id, "w8");
-  s.pickups.push(visible("mega_health", 88)); s.player.health = 250;
+  assert.equal(result.choice.params.weapon, 2); assert.equal(result.choice.params.ref, 0);
+  assert.equal(result.choice.params.forward, 1); assert.equal(result.choice.weaponSelection.id, "w2");
+  s.pickups[0].nearest = false; s.pickups.push(visible("mega_health", 88, undefined, { nearest: true })); s.player.health = 250;
   result = selected(s, { action: "approach", item: "p2" }, format);
   assert.equal(result.choice.params.ref, 88); assert.equal(result.choice.params.forward, 1); assert.equal(result.choice.params.fire, false);
 });

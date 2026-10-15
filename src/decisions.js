@@ -1,8 +1,9 @@
 import { PRIMARY_OBJECTIVE, DEFAULT_PRIORITY_ORDER, validatePriorityOrder, objectivesFor, goalPrompt } from "./objective.js";
 import { CONTROL_MODE, OBSERVATION_POLICY, CONTROLLER_POLICY, OFFER_POLICY } from "./control.js";
 import { screenCues, fallenEnemy } from "./screen.js";
-import { perception, readable, viewText, targetText, sceneText, poseText } from "./perception.js";
-import { weaponReach, weaponOption, weaponInventory, WEAPON_GUIDANCE } from "./weapons.js";
+import { perception, readable, viewText, sceneText, poseText } from "./perception.js";
+import { weaponReach, weaponInventory, WEAPON_GUIDANCE } from "./weapons.js";
+import { automaticPlan, bindAutomatic } from "./automatic.js";
 import { SAMPLING_METHOD, sampleDistribution } from "./sampling.js";
 
 export const ACTION_TICKS = 12;
@@ -47,7 +48,8 @@ export function situation(observation, memory = null, { priorityOrder = DEFAULT_
   return text.join("\n");
 }
 
-/** No probes, tactical ranking, ammo/survival filters or remembered-route vetoes. */
+/** No geometry probes, tactic shortlists or survival/remembered-route vetoes.
+ * Target and equipment binding are separate, disclosed automatic assistance. */
 export function prepareDecision(observation, memory = null, options = {}) {
   const decisionFormat = validateDecisionFormat(options.decisionFormat ?? DEFAULT_DECISION_FORMAT);
   const priorityOrder = validatePriorityOrder(options.priorityOrder === undefined ? DEFAULT_PRIORITY_ORDER : options.priorityOrder);
@@ -79,48 +81,38 @@ export function prepareDecision(observation, memory = null, options = {}) {
     if (aim) {
       // Explicit model-chosen goal, NOT an override of stationary attacks. The
       // executor advances only while the CURRENT HUD weapon is the melee axe.
-      add("engage", "Engage: aim and attack, close in with axe", { fire: true, meleeApproach: true }, aim);
-      add("attack", "Hold position and attack", { fire: true }, aim);
+      add("engage", "Engage nearest enemy; close in with axe", { fire: true, meleeApproach: true }, aim);
+      add("attack", "Hold position and attack nearest enemy", { fire: true }, aim);
     }
     add("forward-fire", aim ? "Aim and attack while advancing" : "Advance attacking", { forward: 1, fire: true }, aim);
     add("back-fire", aim ? "Aim and attack while retreating" : "Back up attacking", { forward: -1, fire: true }, aim);
     add("left-fire", aim ? "Aim and attack moving left" : "Strafe left attacking", { side: -1, fire: true }, aim);
     add("right-fire", aim ? "Aim and attack moving right" : "Strafe right attacking", { side: 1, fire: true }, aim);
-    if (bindings.item.length) add("approach", "Approach item", { forward: 1 }, "item");
+    if (bindings.item.length) add("approach", "Approach nearest pickup", { forward: 1 }, "item");
     add("jump", "Jump forward", { forward: 1, jump: true });
     add("swim-up", "Swim up", { up: 1 }); add("swim-down", "Swim down", { up: -1 });
     // Equipment accompanies the tactic; selecting an already-held gun must not
     // become a turn-consuming no-op. Wait + a weapon still permits a stationary switch.
     add("wait", "Wait");
   }
-  const grounding = Object.fromEntries(Object.entries(bindings).filter(([, entries]) => entries.length).map(([key, entries]) => [key, {
-    type: "choice", instructions: key === "aim" ? "Which visible enemy is the urgent threat? Consider attacks, apparent size and damage. Crosshair alignment alone is not priority. Size is not distance."
-      : key === "item" ? "Which visible pickup best meets HUD needs? Follow priorities. Size is not distance."
-      : "Best owned weapon? Use strongest effective loaded gun; consider reach and self-harm.",
-    criteria: Object.fromEntries(entries.map(e => [e.id, key === "weapon" ? weaponOption(e, observation.player) : targetText(e)])),
-  }]));
+  const automatic = automaticPlan(observation, seen);
   return { controlMode: CONTROL_MODE, observationPolicy: OBSERVATION_POLICY, controller: CONTROLLER_POLICY,
     objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), offerPolicy: OFFER_POLICY,
-    candidates: all, eligible: all, bindings, grounding, memory: structuredClone(memory), visual,
-    decisionFormat, sharedState: context, requests: requestsFor(all, context, decisionFormat, grounding) };
+    candidates: all, eligible: all, bindings, automatic, memory: structuredClone(memory), visual,
+    decisionFormat, sharedState: context, requests: requestsFor(all, context, decisionFormat) };
 }
 export function candidates(observation, memory = null, options = {}) { return prepareDecision(observation, memory, options).candidates; }
 
-/** Multiple explicit choice heads share ONE state. This avoids Cartesian-product
- * shortlisting while leaving every target/weapon selection to the model. */
-export function requestsFor(eligible, sharedState, decisionFormat = DEFAULT_DECISION_FORMAT, grounding = {}) {
+/** Normal play asks exactly ONE action question. Target/equipment bindings are
+ * declared controller assistance, not more model questions or sampled heads. */
+export function requestsFor(eligible, sharedState, decisionFormat = DEFAULT_DECISION_FORMAT) {
   validateDecisionFormat(decisionFormat);
   if (!eligible.length) return [];
-  for (const c of eligible) if (c.binding && !grounding[c.binding]) throw new Error(`Missing choice question: ${c.binding}`);
-  // Kevala tokenizes each question independently anyway. One question per item
-  // in ONE decideMany call preserves per-question usage rather than a misleading
-  // aggregate (four clipped 512-token questions otherwise report 2048 tokens).
-  const actions = decisionFormat === "noul" ? eligible.map(c => ({ state: c.state, questions: structuredClone(NOUL_BASELINE_QUESTION) })) :
+  return decisionFormat === "noul" ? eligible.map(c => ({ state: c.state, questions: structuredClone(NOUL_BASELINE_QUESTION) })) :
     [{ state: sharedState, questions: { action: { type: "choice",
-      instructions: `Which tactic helps ${PRIMARY_OBJECTIVE}? Follow listed priorities, highest first. Use recent outcomes; equipment is concurrent.`,
+      instructions: `Tactic to ${PRIMARY_OBJECTIVE}? Follow priorities, highest first; use outcomes. Nearest targets; weapon auto.`,
       criteria: Object.fromEntries(eligible.map(c => [optionId(c), c.choiceText])),
     } } }];
-  return actions.concat(Object.entries(grounding).map(([name, question]) => ({ state: sharedState, questions: { [name]: structuredClone(question) } })));
 }
 
 export function rankDecision(record) {
@@ -157,9 +149,9 @@ export function rankResponses(responses, eligible, decisionFormat = DEFAULT_DECI
   return ranking.sort((a, b) => b.probability - a.probability || Number(b.id === selectedId) - Number(a.id === selectedId) || a.index - b.index);
 }
 
-/** Sample ONE composite decision. Only used binding heads consume draws. Invalid
- * answers reject the whole command; a rejected/stale decision is never resampled.
- * Independent noul ratings are diagnostic scores, NOT a categorical distribution. */
+/** Sample the tactic ONCE; automatically bind targets/equipment for inspection.
+ * Invalid/stale decisions are never resampled. Independent noul ratings remain
+ * diagnostic scores, NOT a categorical distribution. */
 export function resolveSelection(record, { random = Math.random } = {}) {
   const ranking = rankDecision(record);
   if (record.sampling) throw new Error("This decision has already been sampled; score a fresh observation.");
@@ -180,39 +172,7 @@ export function resolveSelection(record, { random = Math.random } = {}) {
     sampling.heads.action = { method: "highest-noul-rating", responseIndex: record.selectedIndex,
       optionId: optionId(record.eligible[record.selectedIndex]), index: record.selectedIndex, probability: ranking[0].probability };
   }
-  const candidate = record.eligible[record.selectedIndex];
-  const choice = { ...candidate, params: { ...candidate.params }, selection: null, weaponSelection: null };
-  const relevant = [candidate.binding, record.bindings.weapon.length ? "weapon" : null].filter(Boolean);
-  // Validate all USED binding distributions before drawing any of them. Unused
-  // responses stay in the trace, but cannot turn a movement into an attack.
-  const validated = Object.fromEntries(relevant.map(question => {
-    const entries = record.bindings[question];
-    const responseIndex = record.requests.findIndex(request => Object.hasOwn(request.questions, question));
-    const answer = record.responses[responseIndex]?.answers?.[question];
-    try { rankResponses([{ answers: { action: answer } }], entries); }
-    catch (error) { throw new Error(`Invalid ${question} selection: ${error.message}`); }
-    return [question, { entries, responseIndex, answer }];
-  }));
-  function select(question) {
-    const { entries, responseIndex, answer } = validated[question];
-    const sampled = draw(question, entries, responseIndex, answer), selected = entries[sampled.index];
-    return { selected, selection: { question, responseIndex, id: selected.id, answer: structuredClone(answer), sampling: sampled } };
-  }
-  const labels = [candidate.label];
-  if (candidate.binding) {
-    const { selected, selection } = select(candidate.binding);
-    choice.selection = selection; choice.params.ref = selected.ref;
-    labels.push(`${selected.id} ${readable(selected.kind)}`);
-  }
-  if (record.bindings.weapon.length) {
-    const { selected, selection } = select("weapon");
-    choice.weaponSelection = { ...selection, name: selected.name };
-    // Keep the desired ID even when it matched the observed HUD. The native
-    // executor checks the CURRENT HUD, since equipment can change during inference.
-    choice.params.weapon = selected.weapon;
-    labels.push(selected.name);
-  }
-  choice.label = choice.choiceText = labels.join(" · ");
+  const choice = bindAutomatic(record.eligible[record.selectedIndex], record.automatic);
   sampling.complete = true;
   return choice;
 }

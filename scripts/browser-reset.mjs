@@ -46,7 +46,7 @@ export async function checkReset({ evaluate, check, until, call, bindKillForTest
     await reset();
     await check('Reset restores the current level/loadout while preserving model, priorities and historical requests', `
       const s=qev.engine.snapshot();
-      return s.map==='qev_encounter' && s.difficulty===2 && s.controlMode==='player-observable' && s.paused && s.alive &&
+      return s.map==='qev_encounter' && s.difficulty===2 && s.controlMode==='visible-assisted' && s.paused && s.alive &&
         s.player.health===100 && s.player.ammo===25 && resetTest.beforeReset.player.ammo<25 &&
         qev.agent.getModel()===resetTest.model && JSON.stringify(qev.priorityOrder)===resetTest.order &&
         qev.agent.history.includes(resetTest.executed) && JSON.stringify(resetTest.executed.requests)===resetTest.historyState &&
@@ -103,7 +103,7 @@ export async function checkReset({ evaluate, check, until, call, bindKillForTest
     await reset();
     await check('manual Reset can recover a dead episode without requiring a model change or automatic respawn', `
       const s=qev.engine.snapshot();return s.alive && s.paused && s.map==='qev_encounter' && s.difficulty===2 &&
-        s.controlMode==='player-observable' && qev.agent.getModel()===resetTest.model && JSON.stringify(qev.priorityOrder)===resetTest.order;
+        s.controlMode==='visible-assisted' && qev.agent.getModel()===resetTest.model && JSON.stringify(qev.priorityOrder)===resetTest.order;
     `);
   } finally {
     await evaluate(`qev.pause();

@@ -1,9 +1,9 @@
 // Rebuild the explicitly synthetic protocol example. No engine/model/asset access.
 import { writeFile } from "node:fs/promises";
 import { prepareDecision, resolveSelection } from "../src/decisions.js";
-const object = (kind, ref, bounds, pixels) => ({ kind, ref, visible: true, pose: "unknown",
+const object = (kind, ref, bounds, pixels) => ({ kind, ref, visible: true, pose: "unknown", nearest: true,
   screen: { bounds, pixels, aimOverlap: false, clipped: false, sameKindCount: 1 } });
-const observation = { version: 4, controlMode: "player-observable", ready: true, alive: true, completed: false,
+const observation = { version: 5, controlMode: "visible-assisted", ready: true, alive: true, completed: false,
   paused: true, owned: true, epoch: 1, tick: 42,
   player: { health: 28, armor: 0, ammo: 8, weapon: "shotgun", shells: 8, nails: 0, rockets: 0, cells: 0,
     silverKey: false, goldKey: false, grounded: true, inWater: false,
@@ -20,17 +20,17 @@ r.responses = r.requests.map(request => ({ model: "synthetic-example-no-inferenc
   return [name, { type: "choice", choice, probabilities: Object.fromEntries(keys.map(key => [key, keys.length === 1 ? 1 : key === choice ? 0.6 : 0.4 / (keys.length - 1)])) }];
 })) }));
 // Fixed illustrative draws, not real inference/randomness: action deliberately
-// samples Engage instead of SDK argmax back-fire; equipment samples the shotgun.
-const illustrativeDraws = [0.2, 0.5, 0.7];
+// samples Engage instead of SDK argmax back-fire; target/equipment are automatic.
+const illustrativeDraws = [0.2];
 const selected = resolveSelection(r, { random: () => illustrativeDraws.shift() });
 await writeFile(new URL("../examples/combat-decision.json", import.meta.url), JSON.stringify({
-  synthetic: true, notice: "Hand-authored observation, probabilities and sampling draws. Not captured gameplay, real model inference or an executed command. Refs are illustrative.",
+  synthetic: true, notice: "Hand-authored observation (including nearest markers), probabilities and one sampling draw. Not captured gameplay, real model inference or an executed command. Refs are illustrative.",
   controlMode: r.controlMode, observationPolicy: r.observationPolicy, controller: r.controller, observation,
-  requests: r.requests, responses: r.responses, sampling: r.sampling, resolvedCommandExample: { id: selected.id, optionId: selected.optionId, label: selected.label, selection: selected.selection, weaponSelection: selected.weaponSelection, params: selected.params },
+  requests: r.requests, responses: r.responses, sampling: r.sampling, automatic: r.automatic, resolvedCommandExample: { id: selected.id, optionId: selected.optionId, label: selected.label, selection: selected.selection, weaponSelection: selected.weaponSelection, params: selected.params },
   notes: ["All tactics are offered without geometry probes, resource/health filtering or a tactical shortlist.",
-    "Separate choice questions share the same state in one batch. The chosen tactic's target and the concurrent weapon choice are used. Keeping the shotgun does not consume a separate action.",
-    "Full distributions are sampled once, in offer order. Each used head records its draw and interval; the original SDK argmax and probabilities remain untouched. No retry or tactical substitution.",
-    "Here the illustrative action draw selects Engage rather than the SDK's top back-fire; the aim and equipment draws choose e1 and shotgun.",
+    "Only one action question is asked. Nearest visible target and strongest loaded equipment are controller assistance, not model choices or additional draws.",
+    "The full tactic distribution is sampled once, in offer order. Its draw and interval are recorded; the original SDK argmax and probabilities remain untouched. No retry or tactic substitution.",
+    "Here the illustrative action draw selects Engage rather than the SDK's top back-fire. The illustrative nearest marker binds e1; loaded-weapon priority picks shotgun.",
     "Visible lava coverage is not a predicted movement outcome. There is no hit, safety or collection guarantee.",
     "This file contains no native execution outcome or model-performance claim."],
 }, null, 2) + "\n");

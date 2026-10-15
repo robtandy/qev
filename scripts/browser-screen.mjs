@@ -20,7 +20,7 @@ export async function checkScreen({ evaluate, check, until, pressKeys }) {
       const s=qev.engine.snapshot();screenTest.first=s;const m=qev.engine.module;
       if(!s.screen.available || !s.enemies.length)throw new Error(JSON.stringify(s));
       await new Promise(r=>setTimeout(r,120));const now=qev.engine.snapshot();
-      return s.version===4 && s.controlMode==='player-observable' && m._qev_screen_version()===3 && m._qev_control_version()===7 &&
+      return s.version===5 && s.controlMode==='visible-assisted' && m._qev_screen_version()===4 && m._qev_control_version()===8 &&
         ['_qev_evaluation','_qev_assistance','_qev_probe','_qev_action','_qev_live_action','_qev_input_action','_qev_live_input'].every(k=>!(k in m)) &&
         !('position' in s.player) && !('yaw' in s.player) && !('pitch' in s.player) && !qev.engine.probe && !qev.engine.setAssistance &&
         s.screen.source==='renderer-visible-pixels' && s.screen.tick===s.tick && s.screen.viewport.join(',')==='0,0,640,432' &&
@@ -33,13 +33,14 @@ export async function checkScreen({ evaluate, check, until, pressKeys }) {
       return s.scene.length===9 && s.scene.every(c=>c.length===8 && c.every(Number.isInteger)) &&
         s.player.weapons.some(w=>w.name==='axe') && s.player.weapons.some(w=>w.name==='shotgun') &&
         r.sharedState.includes('Lower view:') && r.sharedState.includes('Not a safe-route test') &&
-        r.eligible.every(c=>c.allowed && !c.geometry && !c.route) && r.bindings.aim.length>0 && !!r.grounding.weapon;
+        r.eligible.every(c=>c.allowed && !c.geometry && !c.route) && r.bindings.aim.length>0 && r.requests.length===1 && r.automatic.weapon?.weapon===2 && r.automatic.aim?.ref===s.enemies.find(e=>e.nearest)?.ref;
     `);
     await key('v');
-    await check('widening rendered FOV changes apparent target size without measuring world distance', `
+    await check('widening FOV changes apparent size without exporting distance or changing the sole nearest enemy', `
       const a=screenTest.first.enemies.find(e=>e.kind==='monster_army'), s=qev.engine.snapshot(), b=s.enemies.find(e=>e.kind==='monster_army');
       if(!b || (b.screen.bounds[3]-b.screen.bounds[1])>=(a.screen.bounds[3]-a.screen.bounds[1])*0.85)throw new Error(JSON.stringify({a,b,s}));
-      return s.screen.available && s.screen.frame>screenTest.first.screen.frame && s.tick-screenTest.first.tick===1 && b.screen.pixels<a.screen.pixels;
+      return s.screen.available && s.screen.frame>screenTest.first.screen.frame && s.tick-screenTest.first.tick===1 && b.screen.pixels<a.screen.pixels &&
+        a.nearest && b.nearest && !('distance' in b);
     `);
     await key('f'); await key('b');
     await check('not-drawn actors provide no perception or target capability even though they still exist in the level', `
@@ -98,6 +99,7 @@ export async function checkScreenModel({ evaluate, check }) {
       features:Array.from({length:6},()=>object('projectile')),
       scene:Array.from({length:9},()=>[10000,10000,0,0,0,0,2000,0]),
       audio:{source:'mixed-sound-captions',available:true,events:[{kind:'weapon',direction:'left',loudness:'clear',ageTicks:0},{kind:'creature_or_effect',direction:'right',loudness:'quiet',ageTicks:80}]}};
+    s.enemies[0].nearest=true;s.pickups[0].nearest=true;
     const memory={pastSightings:[{kind:'monster_zombie',side:'right',ageTicks:180}],actions:[{action:'Aim and attack moving right · e1 grunt',actionId:'right-fire',healthChange:-32,ammoChange:-12}],repeated:6};
     const variants=[];
     for(const [variant,patch] of [
@@ -108,6 +110,8 @@ export async function checkScreenModel({ evaluate, check }) {
     ]) {
       const snapshot=structuredClone(s);Object.assign(snapshot.player,patch);
       const prepared=prepareDecision(snapshot,memory,{realtime:true,heldAction:'right-fire'});
+      if(prepared.requests.length!==1 || Object.keys(prepared.requests[0].questions).join(',')!=='action')
+        throw new Error('Normal play must ask exactly one action question');
       if(!prepared.requests.every(r=>{const names=r.state.split('Owned weapons: ')[1]?.split('.')[0].split(', ');
         return names?.length===WEAPONS.length && WEAPONS.every(name=>names.includes(name));}))
         throw new Error('A question lost part of the owned inventory');

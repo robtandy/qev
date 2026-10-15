@@ -42,7 +42,8 @@ export function decisionOutcome(record) {
     observationTick: record.before.tick, appliedTick: record.appliedAt?.tick,
     ageTicksAtApply: record.ageTicksAtApply, ageMsAtApply: record.ageMsAtApply,
     observedTicksSinceApply: after?.epoch === before.epoch ? after.tick - before.tick : null,
-    sampling: record.sampling,
+    sampling: record.sampling, automaticAtScore: record.automatic, automaticAtApply: record.automaticAtApply,
+    selectedAtScore: record.selectedAtScore,
     execution: record.execution, selectedAction: record.selected || record.eligible[record.selectedIndex],
     observationMemory: record.memory, memoryAfter: record.memoryAfter,
     screenCues: record.visual, observation: record.before, appliedAt: record.appliedAt,
@@ -93,7 +94,7 @@ export class DecisionCards {
     const body = this.element("div", "decision-body");
     const error = this.element("p", "decision-error"), warning = this.element("p", "decision-warning");
     const candidates = this.element("ol", "candidates");
-    candidates.setAttribute("aria-label", "Offered tactics and model probabilities; sampled target and concurrent weapon selections are in the outcome");
+    candidates.setAttribute("aria-label", "Offered tactics and model probabilities; automatic target and equipment choices are in the outcome");
     const payloads = {};
     for (const [key, title] of [["state", record.requests.some(request => request.state !== record.requests[0].state) ? "States sent to model" : "State sent to model"], ["request", "Exact request"], ["response", "Exact response"], ["outcome", "Observation & outcome"]]) {
       const section = this.element("details", key === "state" ? "payload model-state" : "payload");
@@ -134,7 +135,7 @@ export class DecisionCards {
         const row = this.element("li", chosen ? "chosen" : !candidate.allowed ? "filtered" : "");
         const top = this.element("div", "candidate-top");
         top.append(this.element("span", "", `${chosen ? "→ " : ""}${candidate.label}`), this.element("b", "", score ? `${(score.probability * 100).toFixed(1)}%` : "—"));
-        const text = candidate.reason || candidate.offerNote || (index >= 0 ? `${record.decisionFormat === "choice" ? `Request [0] · choice “${candidate.optionId ?? candidate.id}”` : `Request [${index}]`} · up to ${candidate.params.ticks} ticks · model probability; sampled target and weapon choices in outcome` : "Not offered: action budget limit");
+        const text = candidate.reason || candidate.offerNote || (index >= 0 ? `${record.decisionFormat === "choice" ? `Request [0] · choice “${candidate.optionId ?? candidate.id}”` : `Request [${index}]`} · up to ${candidate.params.ticks} ticks · model probability; automatic target and equipment in outcome` : "Not offered: action budget limit");
         row.append(top, this.element("small", "", text));
         return row;
       });

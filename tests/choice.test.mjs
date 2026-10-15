@@ -12,7 +12,7 @@ test("choice is one state with a short description for every offered action", ()
   assert.equal(DEFAULT_DECISION_FORMAT, "choice");
   const r = prepareDecision(state(), null, { realtime: true });
   assert.equal(r.decisionFormat, "choice");
-  assert.equal(r.requests.length, 4);
+  assert.equal(r.requests.length, 1);
   assert.ok(r.requests.every(request => request.state === r.sharedState));
   const input = r.requests[0];
   assert.equal(input.questions.action.type, "choice");
@@ -21,7 +21,7 @@ test("choice is one state with a short description for every offered action", ()
   assert.match(input.state, /gold key/);
   assert.match(input.state, /Not a safe-route test/);
   assert.doesNotMatch(input.state, /new cell|LOS clear|nearest observed threat/);
-  assert.deepEqual(r.requests.map(request => Object.keys(request.questions)[0]), ["action", "aim", "item", "weapon"]);
+  assert.deepEqual(r.requests.map(request => Object.keys(request.questions)[0]), ["action"]);
   assert.deepEqual(Object.keys(input.questions.action.criteria), r.eligible.map(c => c.optionId));
   for (const c of r.eligible) {
     assert.equal(input.questions.action.criteria[c.optionId], c.choiceText);
@@ -39,11 +39,11 @@ test("the noul comparison uses the identical tactic and target pools and observa
   assert.deepEqual(choice.candidates, noul.candidates);
   assert.deepEqual(choice.eligible, noul.eligible);
   assert.equal(choice.sharedState, noul.sharedState);
-  assert.equal(noul.requests.length, noul.eligible.length + 3);
+  assert.equal(noul.requests.length, noul.eligible.length);
   assert.ok(noul.requests.slice(0, noul.eligible.length).every((r, i) => r.questions.favorable.type === "noul" && r.state === noul.eligible[i].state));
-  assert.ok(noul.requests.slice(noul.eligible.length).every(r => r.state === noul.sharedState));
-  assert.deepEqual(requestsFor(choice.eligible, choice.sharedState, "noul", choice.grounding), noul.requests);
-  assert.deepEqual(requestsFor(noul.eligible, noul.sharedState, "choice", noul.grounding), choice.requests);
+  assert.deepEqual(noul.automatic, choice.automatic);
+  assert.deepEqual(requestsFor(choice.eligible, choice.sharedState, "noul"), noul.requests);
+  assert.deepEqual(requestsFor(noul.eligible, noul.sharedState, "choice"), choice.requests);
 });
 
 test("inspection ranking retains the SDK argmax for rounded ties; execution samples separately", () => {

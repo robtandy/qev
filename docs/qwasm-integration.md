@@ -46,7 +46,7 @@ Standard Quake serializes the active-weapon HUD value as one byte (`sv_main.c` /
 as zero. The bridge normalizes that **HUD-only** value for display, switch suppression and
 engagement; it does not inspect the server's weapon field. Unknown values are not guessed as axes.
 
-Raw relative controls do not need exact world headings. Target assistance uses only current
+Raw relative controls do not need exact world headings. Target aiming uses only current
 painted pixels plus camera intrinsics, with bounded angular rate. A private visible reference
 is invalidated on any lost frame; it is never a hidden tracking identity. Standard Quake physics,
 weapon behavior and damage are unchanged. The explicitly offered engagement goal adds forward
@@ -56,8 +56,12 @@ After pixel aim or explicit model pitch input releases, the pure `qev_recenter.c
 returns pitch toward level with a bounded rate/tick/wall lease. It cannot read targets, change yaw or keep movement/fire held.
 Explicit pitch commands and new targets preempt recovery; Stop freezes it without extra frames.
 Only activity, level confirmation and camera-changing tick counts are exposed, not angles/headings.
-Own-player displacement is an internal teleport
-lifecycle guard only, not an observation, navigation map or speculative safety check.
+Own-player displacement supplies internal teleport guards and binary movement feedback,
+not a coordinate observation, navigation map or speculative safety check.
+The separate user-approved nearest-target selector compares current rendered model-center
+distance only after final visible pixels are confirmed. It exports a boolean marker, not
+positions/ranges. `qev_nearest.c/h` cannot query the server or perform visibility/route probes;
+`qev_EndView` enforces the visibility/pose gate and retains the winner in the capped list.
 
 ## Rendering and audio concessions
 
@@ -80,15 +84,16 @@ recognition, and cannot infer front/back, occlusion or a precise source location
 
 Kevala's Laya sequences contain a question/options head and the state in a **single 512-token
 sequence**, with a 192-token head budget. Multiple questions create multiple sequences; a
-multi-question response aggregates `usage.input_tokens`. qev therefore uses one question per
-request item in a single `decideMany` batch, retaining a verbatim shared state and independently
-inspectable per-question usage. This does not create speculative game steps or multiple in-flight
-jobs. Input-limit hits are rejected, not silently treated as fully read observations.
+multi-question response aggregates `usage.input_tokens`. Normal qev play now sends just **one
+action question** in one request item; targets and equipment are automatic assistance. The
+explicit `noul` diagnostic still uses per-tactic request items. Verbatim states and per-question
+usage remain inspectable. This creates no speculative game steps or multiple in-flight jobs. Input-limit hits are rejected, not silently treated as fully read observations.
 
-The JS lifecycle preserves original requests/responses and samples each used choice head's
-full public distribution once. The sampled tactic/target/equipment and replayable draws are
-recorded separately from the unchanged SDK argmax. Rejections are never resampled; no tactical
-substitution or alternate target is introduced. Independent `noul` tactic ratings remain an
+The JS lifecycle preserves original requests/responses and samples the full public action
+distribution once. Nearest-visible targets and fixed strongest-loaded equipment are recorded
+separately as automatic choices, refreshed on application but never substituted mid-lease.
+The original SDK argmax and probabilities stay unchanged. Rejections are never resampled or
+replaced by another tactic. See [automatic bindings](automatic-bindings.md). Independent `noul` tactic ratings remain an
 explicit highest-rating diagnostic, never a fallback or an invented categorical distribution.
 See the [pinned Kevala API](https://github.com/bvolpato/kevala/blob/5f1a7104aa6213cbe52ff03f876b5198fe451595/js/src/index.js)
 and [sequence builder](https://github.com/bvolpato/kevala/blob/5f1a7104aa6213cbe52ff03f876b5198fe451595/crates/kevala/src/sequence.rs).

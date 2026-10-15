@@ -15,8 +15,9 @@ export const horizontal = e => e.bounds[2] < 0.5 ? "left" : e.bounds[0] > 0.5 ? 
  * capabilities for THIS visible frame, never used for memory/identity matching. */
 export function perception(observation, visual = screenCues(observation)) {
   const contacts = visual.available ? visual.entities.map(e => {
-    const ref = observation[GROUPS[e.group]]?.[e.sourceIndex]?.ref;
-    return { ...e, bounds: [...e.bounds], id: `${e.group[0]}${e.sourceIndex + 1}`, ref: int(ref, 2147483647) && ref > 0 ? ref : null };
+    const source = observation[GROUPS[e.group]]?.[e.sourceIndex], ref = source?.ref;
+    return { ...e, bounds: [...e.bounds], id: `${e.group[0]}${e.sourceIndex + 1}`,
+      ref: int(ref, 2147483647) && ref > 0 ? ref : null, nearest: source?.nearest === true };
   }) : [];
   const scene = [];
   if (visual.available && Array.isArray(observation.scene) && observation.scene.length === 9) {

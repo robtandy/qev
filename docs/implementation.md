@@ -1,8 +1,9 @@
 # qev implementation
 
-qev has **one player-observable controller**, not separate assisted/unassisted modes.
-The old GPS, route/cover probes and tactical shortlisting have been removed, including
-native exports. See [state-and-actions.md](state-and-actions.md) for the sensing boundary
+qev has **one visible-assisted controller**, not separate assisted/unassisted modes.
+The user-approved [automatic binding policy](automatic-bindings.md) uses nearest currently
+visible targets and strongest loaded equipment. The model answers one action question.
+Old GPS, route/cover probes and tactical shortlisting remain removed, including native exports. See [state-and-actions.md](state-and-actions.md) for the sensing boundary
 and [qwasm-integration.md](qwasm-integration.md) for upstream hooks.
 
 ## Reproduce and publish source only
@@ -12,7 +13,7 @@ and [qwasm-integration.md](qwasm-integration.md) for upstream hooks.
 - Kevala: npm **0.1.3**, locked in `package-lock.json`.
 - `scripts/build-engine.mjs` restores/reapplies 14 patched upstream files in the pinned,
   generated `build/qwasm` checkout and copies `qev_bridge.c/h`, `qev_pixels.c/h` and
-  `qev_animation.c/h` there. `animation-data.mjs` validates `engine/animation-labels.json`
+  `qev_animation.c/h`, `qev_recenter.c/h` and `qev_nearest.c/h` there. `animation-data.mjs` validates `engine/animation-labels.json`
   and emits the native annotation header only into the ignored build.
 - The modular ES-module engine goes in ignored `build/engine/`. There is no asset preload.
 - Bridge/reducer finite-number checks are compiled without fast-math. The browser tests
@@ -33,8 +34,8 @@ its QuakeC/program resources have different obligations from its artwork/sounds.
 
 ## Native bridge
 
-`Engine.start()` rejects old builds: screen capability **3** and control capability **7**
-are required. `qev_snapshot()` returns schema **4**, `controlMode: "player-observable"`.
+`Engine.start()` rejects old builds: screen capability **4** and control capability **8**
+are required. `qev_snapshot()` returns schema **5**, `controlMode: "visible-assisted"`.
 
 | Export | Contract |
 | --- | --- |
@@ -69,7 +70,8 @@ with the tactic. The current HUD is checked at execution: a held weapon causes n
 different one gets a single switch impulse without blocking movement/aim. Fire pauses on that
 switch tick only, not indefinitely until an empty gun equips. A refused switch is not retried
 within the command. Normal Quake weapon refusal/fallback rules determine what actually fires;
-this is an input request, not a guarantee of equipment success or a code-level best-weapon picker. `weaponPresses` counts actual switch inputs.
+this is an input request, not a guarantee of equipment success. The JS automatic power/ammo
+policy chooses the requested weapon; native execution does not choose another. `weaponPresses` counts actual switch inputs.
 
 Targeted commands carry a private opaque reference minted only after actual visible coverage.
 It survives uninterrupted visible frames, not occlusion or slot reuse. Each native input tick
@@ -133,11 +135,14 @@ uncertain, not corpses. No enemy health/deadflag/AI intent is inspected. See
 [weapon-and-death-awareness.md](weapon-and-death-awareness.md). Brush interaction classes are deliberately not
 exposed: a plain-looking wall must not become a known door/button from server metadata.
 
-At most six enemies, six pickups and six visible projectiles/features are serialized, largest
-visible coverage first, with explicit omitted counts. These are observation bandwidth limits,
-not a survival/resource shortlist. Native refs are executor capabilities, not model-visible
-actor IDs or persistent identities. Frame-local names such as `e1` bind the model's answer
-only to that request's observations.
+At most six enemies, six pickups and six features are serialized, with omitted counts. The
+nearest eligible enemy/pickup is retained first; the remaining slots use visible coverage.
+`qev_EndView` reads client/render model-center placement only after final visible pixels and
+pose eligibility are confirmed. `qev_nearest.c/h` compare squared eye-to-center distance, not
+routes, hits or melee contact. Only a `nearest` boolean leaves native code, never coordinates
+or measured ranges. There is no survival/resource ranking. Native refs are short-lived executor
+capabilities, not model-visible actor IDs. Frame-local `e1`/`p1` names are trace bookkeeping,
+not keys for additional target questions.
 
 Stale/incomplete frames, native console/center-text/scoreboard/loading/dialog overlays and
 unsupported debug/stereo rendering abstain. These measurements describe the game's render,
@@ -179,23 +184,22 @@ and backward time reset it. Historical decision records retain their original ev
 
 ## Model requests and authority
 
-Default: typed `choice`. One `decideMany` call contains:
-
-1. A tactic question covering every structurally available tactic.
-2. An aim question, when a visible target is available.
-3. An item question, when a visible pickup is available.
-4. A concurrent equipment question, when multiple HUD-owned weapons exist (empty/current weapons remain).
+Default: typed `choice`. One `decideMany` call contains **one action question**, covering every
+structurally available tactic. No aim, item or weapon questions are computed. `automaticPlan`
+records nearest-visible markers and strongest-loaded HUD equipment separately. The old
+multi-head interface and weapon sampling are superseded by this explicit user request.
 
 There is no standalone "select weapon" tactic: it previously turned keeping the shotgun into
 an indefinitely repeatable no-op that displaced movement/fire. Equipment now accompanies every
 tactic, including wait for a stationary switch. This changes the action interface, not the
 model's scores or selected tactic.
 
-**Engage: aim and attack, close in with axe** is an additional explicit goal, not a rewrite of
+**Engage nearest enemy; close in with axe** is an additional explicit goal, not a rewrite of
 **Hold position and attack**. Its `meleeApproach` bit asks the native executor to advance while
 the current HUD weapon is the axe, including switches/fallback during the command. Guns do not
-receive that automatic advance. Aim/target/weapon choices remain model-selected; no range,
-route or collision query is introduced. The normal lease and visual loss/death guards release
+receive that automatic advance. The tactic remains model-selected; target/equipment binding
+is automatic. Visible-only distance picks the target, but no range/contact/route/collision test
+controls engagement's forward input. The normal lease and visual loss/death guards release
 movement/attack input. Bounded pitch-only recovery can follow released pixel aiming, without
 extending the old command. `meleeApproachTicks` records forward-input ticks, not physical distance or hits.
 Raw/non-engagement commands omit the optional bit (off); malformed or contradictory goal
@@ -208,43 +212,44 @@ recent-action labels and affected repeated choices in frozen-input diagnostics. 
 descriptions, observation history and priorities remain available; sampling never rewrites the
 model's original answer or applies tactical reweighting.
 
-Every item carries the **same exact shared state**, but one question per item. Laya internally
-tokenizes questions independently; separating response usage lets us detect any individual
-512-token limit instead of mistaking an aggregate for one sequence. Its 192-token head budget
+The normal request carries the exact shared state with its one action question. Laya internally
+tokenizes questions independently, so removing auxiliary questions removes their inference
+sequences. Usage remains per question, not a misleading aggregate. Its 192-token head budget
 includes instructions and option descriptions; the 512-token limit includes head **and state**.
 
 Compact shared prose groups equivalent visible descriptions and surface regions, with full
-individual contact side/vertical/apparent-size/pose/crosshair/clipping cues in the target heads.
+individual contact side/vertical/apparent-size/pose/crosshair/clipping cues retained in traces.
 Attack bindings cover non-fallen enemies, not corpses or projectiles; raw blind fire is still
 available. `weapons.js` supplies static reach/strength/switch-ammo facts and a full owned-inventory
-list to the shared state, not merely the equipment question. Each head sees actual held equipment,
-all ammo pools and all validated owned weapons. Ammo/pickups do not imply ownership. New pickups
+list to the action state. It sees actual held equipment, all ammo pools and all validated owned weapons. Ammo/pickups do not imply ownership. New pickups
 and resets update the next request; an unsuccessful switch does not become a held-weapon fact.
-The prompt favors the strongest effective loaded gun, with the axe as a last resort. The user
-confirmed keeping weapon sampling; no fixed ranking, argmax exception, measured range or
-ammo/range veto is added. The complete
-measurements remain in the record. This is lossy, disclosed text perception, not raw video/audio.
+Equipment is now a fixed loaded-power priority (lightning through axe), respecting ownership,
+known ammo and switch minimums. It is not a range/splash/underwater-safety optimizer. Empty
+weapons remain inventory evidence, not candidates for automatic selection. Complete visible
+measurements and separate automatic choices remain in the record. This is lossy, disclosed text perception, not raw video/audio.
 Crowded synthetic 18-object/all-eight-weapon tests cover loaded, empty, one-round and axe-held
-inventories; 176 instruction/option extension canaries check that no head silently truncates.
+inventories; 84 action instruction/option extension canaries check that the head does not silently truncate.
 Identical visual attributes are factored across kinds, preserving every capped kind/count and
 keeping unlike groups/pose/trend descriptions separate. Redundant prose is shortened, not
 priorities, ownership facts or uncertainty. Runtime input-limit hits fail closed with
 the original response and a warning retained; they do not silently execute truncated decisions.
 
-`resolveSelection()` samples the tactic, its required target/item, and concurrent equipment once
-from each used head's full public distribution. `sampling.js` uses inverse CDF in offer order,
+`resolveSelection()` samples only the tactic, once from its full public distribution, then binds
+automatic targets/equipment for inspection. `sampling.js` uses inverse CDF in offer order,
 normalizing only rounding: no temperature, top-k/p, greedy mixing or tactical filtering. Each draw,
 interval, total and option ID is recorded. The SDK argmax (including rounded ties) and original
 probabilities/extra fields remain untouched. `ranking` is informational; `selectedIndex` is the
 sampled tactic. Applied/rejected/stale decisions are never redrawn or tactically replaced.
-Missing/unknown/contradictory relevant answers reject the whole command. Unused aim/item answers
-are retained but consume no draw. These are independent heads, **not a jointly calibrated action
-probability**. Cards display the model's tactic probability and label decisions sampled; actual
-target/equipment samples and raw answers are inspectable in Observation & outcome.
+Invalid action replies or missing/contradictory required nearest markers reject the command.
+Automatic target/equipment choices have no SDK answers or draws. Agent preserves `selectedAtScore`
+and refreshes bindings against current observations at application as `automaticAtApply`, without
+changing the tactic. Targets are fixed once a lease begins; visible loss/death ends the command,
+not an automatic replacement. Cards show the sampled tactic probability and both automatic plans
+in Observation & outcome, separately from untouched raw replies.
 
-The explicit `noul` comparison uses per-tactic ratings plus the same separate binding questions.
-Its tactic remains highest-rating, since independent ratings are not a categorical distribution;
-choice-type binding heads are sampled. It is never a fallback. Larger batches can expire or fail; comparison reports preserve that fact
+The explicit `noul` comparison uses per-tactic ratings and the same automatic bindings, with no
+binding questions/draws. Its tactic remains highest-rating, since independent ratings are not
+a categorical distribution. It is never a fallback. Larger batches can expire or fail; comparison reports preserve that fact
 rather than loosening control guards or inventing successful actions.
 
 ### Returning the view to level
@@ -280,8 +285,9 @@ requests, responses and outcome are inserted as text, not HTML. Identical submit
 shown once verbatim; different baseline states remain an ordered list. Copy uses that card's
 payload; old cards never become executable. History retains at most 50 records.
 
-Exports are **version 14**: single control policy, active/per-record priorities, original requests
-and responses, full `sampling` ledgers, sampled tactic/target plus `weaponSelection`, full
+Exports are **version 15**: single control policy, active/per-record priorities, original requests
+and responses, action `sampling` ledger, separate automatic score/application plans, `selectedAtScore`,
+resolved `selection` / `weaponSelection` with automatic method identifiers, full
 observations, image/history evidence, application age, actual input-tick accounting,
 `weaponPresses`, `meleeApproachTicks` and separate `viewRecovery` feedback. No GPS/route telemetry. The observation window
 may outlast the lease; HUD deltas are observations since application, not causal predictions.
@@ -326,7 +332,7 @@ normal build. The app/agent never calls it. The harness records real scoreboard 
 attack input, stalls, death and all model records. `gameplay-report.mjs` fails missing telemetry,
 stationary firing, knockback-only movement, no attacking, long stalls, death and model errors.
 No God mode or scripted tactical substitutions are used. The user's current policy samples the
-full choice distributions; historical top-choice trials are marked separately. Failed trials
+full action distribution, with automatic bindings; historical multi-head/top-choice trials are marked separately. Failed trials
 remain failures, even when unit/browser smoke tests pass. See [gameplay-validation.md](gameplay-validation.md).
 
 Synthetic budgets and mocked lifecycle decisions are labelled as such. Optional live trials are

@@ -3,13 +3,14 @@ import test from "node:test";
 import { SCREEN_SOURCE, ScreenMemory, screenFrame, screenCues, describeScreenEntity } from "../src/screen.js";
 import { prepareDecision, situation } from "../src/decisions.js";
 import { Agent } from "../src/agent.js";
+import { targetText } from "../src/perception.js";
 import { decisionOutcome } from "../src/decision-cards.js";
 import { replies } from "./replies.mjs";
 
 const entity = (scale = 1, overrides = {}) => ({ kind: "monster_army", ref: 101, visible: true,
   screen: { bounds: [0.5 - 0.05 * scale, 0.5 - 0.1 * scale, 0.5 + 0.05 * scale, 0.5 + 0.1 * scale],
     pixels: Math.round(1500 * scale * scale), aimOverlap: true, clipped: false, sameKindCount: 1, ...overrides } });
-const observation = (tick = 10, scale = 1) => ({ ready: true, alive: true, controlMode: "player-observable", paused: true, completed: false,
+const observation = (tick = 10, scale = 1) => ({ ready: true, alive: true, controlMode: "visible-assisted", paused: true, completed: false,
   epoch: 1, tick, map: "test", owned: true, controlSession: 1, actionTicksLeft: 0,
   screen: { source: SCREEN_SOURCE, available: true, frame: tick, tick, distorted: false, viewport: [0, 0, 640, 432] },
   player: { health: 100, armor: 0, ammo: 25, weapon: "shotgun" }, enemies: [entity(scale)], pickups: [] });
@@ -26,7 +27,7 @@ test("screen descriptions provide position, apparent size and actual center over
   assert.match(describeScreenEntity(screenCues(o).entities[0]), /aim off/); // A hole can cover the bbox center.
   const text = situation(o);
   assert.match(text, /Visible: grunt center medium/);
-  assert.match(prepareDecision(o).grounding.aim.criteria.e1, /grunt center mid medium/);
+  assert.match(targetText(prepareDecision(o).bindings.aim[0]), /grunt center mid medium/);
   assert.match(text, /size not depth/);
   assert.doesNotMatch(text, /nearby|medium range|far away|meters|distance [0-9]/);
 });
@@ -37,7 +38,7 @@ test("screen processing never reads exact telemetry, coarse engine range bins or
   for (const key of ["position", "distance", "bearingRight", "bearing", "elevation", "range", "slot", "generation", "health"]) Object.defineProperty(o.enemies[0], key, { get: forbidden });
   const memory = new ScreenMemory(); memory.observe(o);
   assert.ok(Math.abs(memory.describe(o).entities[0].height - 0.2) < 1e-9);
-  assert.match(prepareDecision(o).grounding.aim.criteria.e1, /grunt center mid medium crosshair/);
+  assert.match(targetText(prepareDecision(o).bindings.aim[0]), /grunt center mid medium crosshair/);
 });
 
 test("unavailable, stale or malformed screen frames never fall back to geometry-based target facts", () => {

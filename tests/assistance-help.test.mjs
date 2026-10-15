@@ -24,7 +24,7 @@ test("removing the help control preserves controller disclosures in documentatio
   assert.match(source("../README.md"), /How it works/);
   assert.match(source("../README.md"), /control policy and perception limits/);
   assert.match(source("../src/app.js"), /observationPolicy: OBSERVATION_POLICY, controller: CONTROLLER_POLICY/);
-  assert.match(CONTROLLER_POLICY, /full public probability distribution/);
-  assert.match(CONTROLLER_POLICY, /explicit model look-up\/down/);
+  assert.match(CONTROLLER_POLICY, /full public tactic distribution/);
+  assert.match(CONTROLLER_POLICY, /explicit look-up\/down/);
   assert.match(OBSERVATION_POLICY, /Not RGB\/audio recognition/);
 });

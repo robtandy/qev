@@ -67,11 +67,11 @@ test("projectiles are visual danger evidence, not invented shootable enemies", (
   assert.ok(r.eligible.some(c => c.id === "fire"));
 });
 
-test("weapon facts expose empty ammunition without removing a choice or picking an alternative", () => {
+test("empty guns stay in inventory evidence but automatic equipment uses the axe without vetoing attack", () => {
   const s = observation(); s.player.ammo = s.player.shells = 0;
   const r = prepareDecision(s);
-  assert.match(r.grounding.weapon.criteria.w2, /EMPTY/);
-  assert.match(r.grounding.weapon.criteria.w1, /contact-only melee, not ranged; no ammo needed/);
+  assert.match(r.sharedState, /Owned weapons: axe, shotgun/);
+  assert.equal(r.automatic.weapon.name, "axe");
   assert.equal(r.eligible.find(c => c.id === "fire").params.fire, true);
 });
 

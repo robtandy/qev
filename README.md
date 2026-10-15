@@ -52,22 +52,31 @@ The goal is **WIN**: defeat enemies and reach the exit alive, not camp indefinit
 There is one controller: HUD/inventory, renderer-labelled visible pixels and surfaces,
 stereo sound captions, scoreboard progress, unsuccessful own-movement feedback, and memory of
 actual observations—not GPS or hidden-world probes.
-The model scores explicit tactic and target/item/weapon questions. qev samples each used
-choice head's full probability distribution once, without temperature or top-k adjustments.
-Original SDK answers remain unchanged; draws and sampled selections are inspectable.
-Weapon selection accompanies
-the chosen tactic, so keeping a gun never consumes a separate action. Code assists execution,
-including visible-pixel aiming, movement, jumping and swimming. No tactical shortlist,
-danger veto, target substitution, or tracking through walls. Every question gets the complete
-HUD-owned weapon inventory, ammo pools, and held weapon’s reach (axe = contact-only melee).
-The prompt favors the best effective loaded gun, with the axe as a last resort. Weapon sampling
-stays on; this guidance is not a forced best-weapon picker. The explicit **Engage** action advances with
-the axe, while **Hold position and attack** remains stationary; no hidden range lookup or
-pathfinding is used. Visible death/corpse poses end aimed enemy attacks;
+The model answers **one action question**, not separate enemy, pickup or weapon questions.
+qev samples its full tactic distribution once, without temperature or top-k adjustments.
+Original SDK answers and the draw remain inspectable. With user-approved automatic assistance:
+
+- Targeted combat uses the **nearest visible active enemy**; pickup approach uses the **nearest visible pickup**.
+- Nearness uses actual distance to renderer-confirmed objects only. Coordinates and measured
+  distances never leave the native selector or enter model input; there is no through-wall targeting.
+- Equipment uses a fixed **strongest loaded owned weapon** priority: lightning, rocket launcher,
+  grenade launcher, super nailgun, nailgun, double shotgun, shotgun, axe. This is not a safety,
+  splash or range optimizer. Switch-ammo minimums and normal native fallback still apply.
+
+Bindings refresh when applying a decision and are recorded separately from model answers.
+Once a command starts it does not retarget. No valid visible target means rejection, not a
+replacement tactic or redraw. Keeping a held gun sends no switch press and never consumes a
+separate action. The action question retains the full HUD inventory, ammo pools and held weapon’s
+reach. Code also assists visible-pixel aiming, relative movement, jumping and swimming, without
+pathfinding or a tactical shortlist/danger veto. **Engage** advances with the axe;
+**Hold position and attack** stays stationary. Visible death/corpse poses end aimed enemy attacks;
 downed zombies remain uncertain. Releasing pixel aim or finishing an explicit look-up/down command
 eases pitch back to level, without retargeting or adding movement/fire. Active look commands take priority, and Stop
 freezes recovery too. See [weapon/death awareness](docs/weapon-and-death-awareness.md) and
-[sampling and view recovery](docs/sampling-and-view-recovery.md).
+[sampling and view recovery](docs/sampling-and-view-recovery.md). The current
+[single-question / automatic-binding contract](docs/automatic-bindings.md) supersedes the old
+multi-head target/equipment sampling. Up to four inference questions become one; this does not
+by itself establish a Pixel frame-rate or latency improvement.
 
 Five decision cards expose exact requests, responses and outcomes. Labels are not RGB/audio
 recognition, and perception/navigation remain limited. The model can make poor choices or

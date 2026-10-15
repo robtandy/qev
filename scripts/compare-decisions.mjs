@@ -53,7 +53,7 @@ async function scorePairs(samples) {
   const { requestsFor, resolveSelection } = await import("/src/decisions.js");
   qev.pause(); const results = [];
   for (const [index, sample] of samples.entries()) {
-    const requests = Object.fromEntries(["choice", "noul"].map(format => [format, requestsFor(sample.eligible, sample.sharedState, format, sample.grounding)]));
+    const requests = Object.fromEntries(["choice", "noul"].map(format => [format, requestsFor(sample.eligible, sample.sharedState, format)]));
     const runs = [];
     for (let repeat = 0; repeat < 2; repeat++) for (const format of ((index + repeat) % 2 ? ["choice", "noul"] : ["noul", "choice"])) {
       const started = performance.now(), responses = await qev.model.decideMany(requests[format]), ms = performance.now() - started;
@@ -77,6 +77,7 @@ async function promptStressCases() {
       silverKey: false, goldKey: false, grounded: true, weapons: [{ id: 1, name: "axe" }, { id: 5, name: "super nailgun" }] },
     enemies: [object("monster_shambler", 10), object("monster_shalrath", 11), object("monster_hell_knight", 12)],
     pickups: [object("silver_key", 20), object("gold_key", 21), object("mega_health", 22)], features: [] };
+  before.enemies[0].nearest = true; before.pickups[0].nearest = true;
   return [false, true].map(realtime => {
     const p = prepareDecision(before, null, { realtime });
     return { id: `synthetic-token-budget-${realtime ? "live" : "inspection"}`, before, ...p };
@@ -98,7 +99,7 @@ export async function compareDecisions({ evaluate, root }) {
     for (const fraction of [0, 0.5, 0.95]) {
       const record = usable[Math.floor((usable.length - 1) * fraction)], id = `${map}-${format}-${record?.id}`;
       if (record && !samples.some(s => s.id === id)) samples.push({ id, before: record.before, eligible: record.eligible,
-        bindings: record.bindings, grounding: record.grounding, sharedState: record.sharedState });
+        bindings: record.bindings, automatic: record.automatic, sharedState: record.sharedState });
     }
   }
   const paired = (await evaluate(`(${scorePairs.toString()})(${JSON.stringify(samples)})`)).concat(stressResults);
@@ -108,12 +109,12 @@ export async function compareDecisions({ evaluate, root }) {
     return [format, { runs: runs.length, medianMs: round(median(runs.map(r => r.ms))), medianTokens: median(runs.map(r => r.tokens)),
       largestQuestion: runs.length ? Math.max(...runs.map(r => r.largestInput)) : null, tokenLimitHits: runs.filter(r => r.largestInput >= 512).length }];
   }));
-  const summary = { objective: PRIMARY_OBJECTIVE, controlMode: "player-observable", model: await evaluate("qev.model.info"), liveTrialMs: 30000,
+  const summary = { objective: PRIMARY_OBJECTIVE, controlMode: "visible-assisted", model: await evaluate("qev.model.info"), liveTrialMs: 30000,
     pairedStates: actual.length, matchingChoices: actual.filter(s => s.runs.find(r => r.format === "choice").selected === s.runs.find(r => r.format === "noul").selected).length,
     inference, trials: reports.map(summarizeTrial), caveats: [
-      "Identical saved observations and complete offered tactic/target pools for paired inference. One call with multiple explicit choice heads vs per-tactic noul ratings plus the same binding heads; not an isolated question-type ablation.",
+      "Identical saved observations and complete offered tactic/target pools for paired inference. One action-choice question vs per-tactic noul ratings; both use identical nearest-visible and strongest-loaded automatic bindings. Not an isolated question-type ablation.",
       "Live trials are separate non-deterministic episodes, not identical replays or a survival/completion-rate benchmark. Larger batches can expire before application.",
-      "Choice heads are sampled independently, with draws retained; matching choices does not compare argmax policies. The noul tactic remains highest-rating, not a categorical probability sample.",
+      "The action distribution is sampled once, with its draw retained; automatic bindings consume no draws. Matching choices does not compare argmax policies. The noul tactic remains highest-rating, not a categorical probability sample.",
       "Look-action counts describe requested inputs, not stationary bodies or explored distance. No GPS/visited-area metrics are collected.",
       "Discarded includes intentional deadline cancellation. Synthetic fixtures are only token-budget checks. Each usage count is for one question, not an aggregate." ] };
   await writeFile(resolve(root, "build/decision-comparison.json"), JSON.stringify({ summary, paired }, null, 2));

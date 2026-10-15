@@ -345,7 +345,7 @@ try {
     const r = qev.agent.current, input = r.requests[0];
     return r.objective==='WIN' && r.objectives.length===4 && input.state.startsWith('Goal: WIN') &&
       input.questions.action.instructions.includes('WIN') &&
-      r.decisionFormat === 'choice' && r.requests.every(request=>request.state===input.state && Object.keys(request.questions).length===1) && input.questions.action.type === 'choice' &&
+      r.decisionFormat === 'choice' && r.requests.length===1 && r.requests.every(request=>request.state===input.state && Object.keys(request.questions).length===1) && input.questions.action.type === 'choice' &&
       JSON.stringify(Object.keys(input.questions.action.criteria)) === JSON.stringify(r.eligible.map(c=>c.optionId)) &&
       r.sampling.complete && r.eligible[r.selectedIndex].optionId === r.sampling.heads.action.optionId &&
       r.sampling.heads.action.sdkChoice === r.responses[0].answers.action.choice &&
@@ -684,7 +684,7 @@ try {
     await check("one UI Step sends the reordered priorities to real Kevala, executes twelve ticks, and stops", `
       const r=qev.agent.current, {goalPrompt}=await import('/src/objective.js');
       return r.priorityOrder[0]==='get-supplies' && r.requests[0].state.startsWith(goalPrompt(qev.priorityOrder)) &&
-        r.responses.length===r.requests.length && r.ranking.every(s=>Number.isFinite(s.probability) && s.probability>=0 && s.probability<=1) &&
+        r.requests.length===1 && r.responses.length===1 && Object.keys(r.sampling.heads).join(',')==='action' && r.ranking.every(s=>Number.isFinite(s.probability) && s.probability>=0 && s.probability<=1) &&
         r.after.tick-r.before.tick===12 && qev.engine.snapshot().paused && qev.playMode==='inspection';
     `);
     console.log("Live decision:", await evaluate("({ms:qev.agent.current.ms,inputs:qev.agent.current.requests.length,actions:qev.agent.current.eligible.length,chosen:qev.agent.current.eligible[qev.agent.current.selectedIndex].label,response:qev.agent.current.responses[0]})"));
@@ -728,9 +728,9 @@ try {
       assert.ok(report.records.every(r=>r.eligible.every(c=>c.id!=='weapon')),'equipment cannot consume a standalone action');
       assert.ok(report.records.some(r=>r.execution?.ticksApplied>0 && ['forward','side','up','yawRate','pitchRate','fire','jump'].some(key=>r.selected.params[key])),
         'the real opening must execute more than neutral waits or equipment changes');
-      assert.ok(report.records.every(r=>r.objective==='WIN' && r.controlMode==='player-observable'));
+      assert.ok(report.records.every(r=>r.objective==='WIN' && r.controlMode==='visible-assisted'));
       assert.equal(report.records.filter(r=>r.warnings?.length).length,0,'no input truncation in gameplay');
-      console.log('Illustrative player-observable episode:',{map,alive:report.end.alive,completed:report.end.completed,
+      console.log('Illustrative visible-assisted episode:',{map,alive:report.end.alive,completed:report.end.completed,
         health:report.end.player.health,ammo:report.end.player.ammo,...report.summary});
       console.log('Trial caveat:',report.caveat);
     }

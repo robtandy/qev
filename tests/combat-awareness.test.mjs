@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { prepareDecision, rankDecision, resolveSelection } from "../src/decisions.js";
 import { WEAPON_PROFILES, weaponReach } from "../src/weapons.js";
-import { perception, ObservationMemory } from "../src/perception.js";
+import { perception, targetText, ObservationMemory } from "../src/perception.js";
 import { ScreenMemory, fallenEnemy, describeScreenEntity } from "../src/screen.js";
 import { observation, visible, advance } from "./observations.mjs";
 import { decisionReplies } from "./replies.mjs";
@@ -12,13 +12,13 @@ for (const weapon of WEAPON_PROFILES) test(`${weapon.name}: reach is shared with
   const s = observation(); s.player.weapon = weapon.name;
   s.player.weapons = WEAPON_PROFILES.map(({ id, name }) => ({ id, name }));
   const r = prepareDecision(s);
-  assert.equal(r.requests.length, 4);
+  assert.equal(r.requests.length, 1);
   for (const request of r.requests) {
     assert.equal(request.state, r.sharedState);
     assert.ok(request.state.includes(`${weapon.name} (${weapon.reach})`));
     assert.match(request.state, /crosshair not melee contact/);
   }
-  for (const w of WEAPON_PROFILES) assert.ok(r.grounding.weapon.criteria[`w${w.id}`].includes(w.reach));
+  assert.ok(r.requests.every(request => !request.questions.weapon));
   assert.equal(r.eligible.length, 20);
 });
 
@@ -39,7 +39,7 @@ test("axe-only inventory still explains contact-only melee and does not invent a
   const forbidden = () => assert.fail("No distance/contact/hit probe is allowed");
   for (const key of ["range", "distance", "inMeleeReach", "canHit", "health", "deadflag"]) Object.defineProperty(s.enemies[0], key, { get: forbidden });
   const r = prepareDecision(s);
-  assert.equal(r.grounding.weapon, undefined);
+  assert.equal(r.requests[0].questions.weapon, undefined);
   assert.match(r.requests[0].state, /axe \(contact-only melee, not ranged\), no ammo needed/);
   assert.ok(r.eligible.some(c => c.id === "attack")); // Input stays legal even if the model chooses badly.
   assert.equal(weaponReach("unknown mod weapon"), "reach unknown");
@@ -52,13 +52,13 @@ test("a refused firearm request describes the actual HUD axe next time, not an i
   const r = prepareDecision(after, memory.describe(after));
   assert.match(r.sharedState, /axe \(contact-only melee, not ranged\)/);
   assert.match(r.sharedState, /requested shotgun not equipped/);
-  assert.match(r.grounding.weapon.criteria.w2, /EMPTY/);
-  assert.match(r.grounding.weapon.criteria.w1, /no ammo needed \(held\)/);
+  assert.equal(r.automatic.weapon.weapon, 1);
+  assert.equal(r.automatic.weapon.name, "axe");
 });
 
 for (const pose of ["death", "dead"]) test(`${pose}: a visible fallen body is retained as evidence, not offered as an active enemy`, () => {
   const s = observation(); s.enemies[0].pose = pose;
-  s.enemies.push(visible("monster_knight", 27, undefined, { pose: "hurt" }));
+  s.enemies.push(visible("monster_knight", 27, undefined, { pose: "hurt", nearest: true }));
   const r = prepareDecision(s), contacts = perception(s).contacts.filter(c => c.group === "enemy");
   assert.equal(contacts.length, 2); assert.equal(fallenEnemy(contacts[0]), true);
   assert.equal(r.visual.entities[0].pose, pose);
@@ -67,17 +67,17 @@ for (const pose of ["death", "dead"]) test(`${pose}: a visible fallen body is re
   r.responses = decisionReplies(r, { action: "attack", aim: "e2", weapon: "w1" });
   const raw = structuredClone(r.responses); r.selectedIndex = rankDecision(r)[0].index;
   const choice = resolveSelection(r);
-  assert.equal(choice.params.ref, 27); assert.equal(choice.params.weapon, 1); assert.equal(choice.params.forward, 0);
+  assert.equal(choice.params.ref, 27); assert.equal(choice.params.weapon, 2); assert.equal(choice.params.forward, 0);
   assert.deepEqual(r.responses, raw, "never rewrite the SDK response or add movement to stationary melee");
+  s.enemies[1].nearest = false; // Only the corpse is marked: not an eligible target.
   const invalid = prepareDecision(s); invalid.responses = structuredClone(raw);
-  invalid.responses.find(x => x.answers.aim).answers.aim = { type: "choice", choice: "e1", probabilities: { e1: 1 } };
-  assert.throws(() => resolveSelection(invalid), /Invalid aim selection/);
+  assert.throws(() => resolveSelection(invalid), /Automatic aim unavailable/);
 });
 
 test("only corpses removes the active-enemy binding, not raw firing/movement or the visible bodies", () => {
   const s = observation(); s.enemies[0].pose = "dead";
   const r = prepareDecision(s);
-  assert.equal(r.grounding.aim, undefined); assert.equal(r.eligible.some(c => c.id === "attack"), false);
+  assert.equal(r.automatic.aim, null); assert.equal(r.eligible.some(c => c.id === "attack"), false);
   for (const id of ["fire", "forward-fire", "back-fire", "left-fire", "right-fire", "forward", "wait"]) {
     const c = r.eligible.find(c => c.id === id); assert.ok(c); assert.equal(c.params.ref, 0);
   }
@@ -89,7 +89,7 @@ for (const pose of ["unknown", "idle", "hurt", "downed", "unrecognized"]) test(`
   const r = prepareDecision(s);
   assert.equal(r.bindings.aim.length, 1); assert.equal(fallenEnemy(r.bindings.aim[0]), false);
   if (pose === "downed") {
-    assert.match(r.sharedState, /downed, may revive/); assert.match(r.grounding.aim.criteria.e1, /downed, may revive/);
+    assert.match(r.sharedState, /downed, may revive/); assert.match(targetText(r.bindings.aim[0]), /downed, may revive/);
   }
 });
 

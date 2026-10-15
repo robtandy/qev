@@ -7,18 +7,19 @@ import { Agent } from "../src/agent.js";
 import { decisionReplies, replies } from "./replies.mjs";
 import { observation, visible, advance } from "./observations.mjs";
 
-for (const format of ["choice", "noul"]) test(`${format}: engagement explicitly carries melee approach without changing the chosen target or weapon`, () => {
-  const s = observation(); s.enemies.push(visible("monster_ogre", 37)); s.player.shells = 0;
+for (const format of ["choice", "noul"]) test(`${format}: engagement retains its explicit approach flag with nearest enemy and loaded-weapon assistance`, () => {
+  const s = observation(); s.enemies[0].nearest = false;
+  s.enemies.push(visible("monster_ogre", 37, undefined, { nearest: true })); s.player.shells = 0;
   const r = prepareDecision(s, null, { decisionFormat: format });
   r.responses = decisionReplies(r, { action: "engage", aim: "e2", weapon: "w2" });
   const raw = structuredClone(r.responses); r.selectedIndex = rankDecision(r)[0].index;
   const selected = resolveSelection(r);
   assert.equal(selected.id, "engage"); assert.equal(selected.params.meleeApproach, true);
-  assert.equal(selected.params.ref, 37); assert.equal(selected.params.weapon, 2);
+  assert.equal(selected.params.ref, 37); assert.equal(selected.params.weapon, 1);
   assert.equal(selected.params.forward, 0, "raw input remains zero; the declared flag is executed against the current HUD");
-  assert.equal(selected.params.fire, true); assert.match(selected.label, /Engage: aim and attack, close in with axe/);
+  assert.equal(selected.params.fire, true); assert.match(selected.label, /Engage nearest enemy; close in with axe/);
   assert.deepEqual(r.responses, raw); assert.equal(selected.selection.id, "e2");
-  assert.equal(selected.weaponSelection.id, "w2", "an empty requested shotgun is not silently replaced by the axe");
+  assert.equal(selected.weaponSelection.id, "w1", "the declared automatic policy uses axe when owned guns are empty");
   assert.ok(r.requests.every(request => request.state === r.sharedState || format === "noul"));
 });
 
@@ -28,7 +29,7 @@ test("engagement is an additional explicit choice; no raw or stationary attack a
   assert.equal(r.eligible.length, 20);
   assert.deepEqual(r.eligible.filter(c => c.params.meleeApproach).map(c => c.id), ["engage"]);
   const stationary = r.eligible.find(c => c.id === "attack");
-  assert.equal(stationary.label, "Hold position and attack"); assert.equal(stationary.params.forward, 0);
+  assert.equal(stationary.label, "Hold position and attack nearest enemy"); assert.equal(stationary.params.forward, 0);
   assert.equal(stationary.params.meleeApproach, undefined); assert.equal(stationary.params.fire, true);
   r.responses = decisionReplies(r, { action: "attack", weapon: "w1" }); r.selectedIndex = rankDecision(r)[0].index;
   const chosen = resolveSelection(r); assert.equal(chosen.id, "attack"); assert.equal(chosen.params.forward, 0);
@@ -43,13 +44,10 @@ for (const change of [s => s.enemies = [], s => s.enemies[0].pose = "dead", s =>
   assert.ok(r.eligible.some(c => c.id === "fire")); assert.ok(r.eligible.some(c => c.id === "forward"));
 });
 
-test("a missing/contradictory engagement binding rejects rather than finding another target or equipment", () => {
-  for (const question of ["aim", "weapon"]) {
-    const r = prepareDecision(observation()); r.responses = decisionReplies(r, { action: "engage" });
-    r.selectedIndex = rankDecision(r)[0].index;
-    delete r.responses.find(response => response.answers[question]).answers[question];
-    assert.throws(() => resolveSelection(r), new RegExp(`Invalid ${question} selection`));
-  }
+test("a missing nearest engagement binding rejects rather than finding a first target", () => {
+  const s = observation(); delete s.enemies[0].nearest;
+  const r = prepareDecision(s); r.responses = decisionReplies(r, { action: "engage" });
+  assert.throws(() => resolveSelection(r), /Automatic aim unavailable/);
 });
 
 test("the native command bit is explicit, defaults off for old raw callers, and rejects malformed values", () => {
@@ -91,7 +89,7 @@ test("inspection and live records retain actual melee-advance input ticks separa
     assert.equal(p.meleeApproach, true); advance(state, 12);
     state.actionTicks = 12; state.meleeApproachTicks = 8; return structuredClone(state);
   } };
-  const model = { decideMany: async requests => replies(requests, null, { action: Object.entries(requests[0].questions.action.criteria).find(([, text]) => text.startsWith("Engage:"))[0] }) };
+  const model = { decideMany: async requests => replies(requests, null, { action: Object.entries(requests[0].questions.action.criteria).find(([, text]) => text.startsWith("Engage nearest"))[0] }) };
   const agent = new Agent({ engine, getModel: () => model }), r = await agent.score(); await agent.step();
   assert.equal(r.execution.ticksApplied, 12); assert.equal(r.execution.meleeApproachTicks, 8);
   const live = { ...r, mode: "realtime", appliedAt: r.before, actionSerial: 7 };

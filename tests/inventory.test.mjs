@@ -17,10 +17,9 @@ for (const format of ["choice", "noul"]) test(`${format}: every question sees th
     assert.match(request.state, /held axe \(contact-only melee, not ranged\), no ammo needed/);
     assert.match(request.state, /shells\/nails\/rockets\/cells 17\/29\/3\/41/);
   }
-  assert.deepEqual(Object.keys(r.grounding.weapon.criteria), s.player.weapons.map(w => `w${w.id}`));
-  assert.match(r.grounding.weapon.instructions, /strongest effective loaded gun/);
-  assert.match(r.grounding.weapon.instructions, /reach and self-harm/);
-  assert.match(r.grounding.weapon.criteria.w1, /weak contact-only melee/);
+  assert.ok(r.requests.every(request => !request.questions.weapon));
+  assert.equal(r.automatic.weapon.name, "lightning");
+  assert.match(weaponOption({ weapon: 1, name: "axe" }, s.player), /weak contact-only melee/);
 });
 
 test("all 255 nonempty inventory subsets are faithfully represented without assuming ownership from ammunition", () => {
@@ -31,6 +30,7 @@ test("all 255 nonempty inventory subsets are faithfully represented without assu
     const r = prepareDecision(s);
     assert.equal(inventoryLine(r.sharedState), `Owned weapons: ${s.player.weapons.map(w => w.name).join(", ")}. ${WEAPON_GUIDANCE}`);
     assert.equal(r.bindings.weapon.length, s.player.weapons.length > 1 ? s.player.weapons.length : 0);
+    assert.equal(r.automatic.weapon.weapon, Math.max(...s.player.weapons.map(w => w.id)), "all owned subsets obey the declared loaded power order");
     assert.ok(r.requests.every(request => inventoryLine(request.state) === inventoryLine(r.sharedState)));
   }
 });
@@ -53,7 +53,7 @@ test("inventory uses the same validated/deduplicated HUD entries as equipment of
   for (const key of ["health", "distance", "range", "canHit"]) Object.defineProperty(s.enemies[0], key, { get: forbidden });
   const r = prepareDecision(s);
   assert.equal(inventoryLine(r.sharedState), `Owned weapons: axe, shotgun. ${WEAPON_GUIDANCE}`);
-  assert.deepEqual(Object.keys(r.grounding.weapon.criteria), ["w1", "w2"]);
+  assert.deepEqual(r.bindings.weapon.map(w => w.id), ["w1", "w2"]);
   s.player.weapons[0].name = "mutated";
   assert.equal(inventoryLine(r.sharedState), `Owned weapons: axe, shotgun. ${WEAPON_GUIDANCE}`, "historical requests stay unchanged");
 });
@@ -63,7 +63,7 @@ test("missing/empty inventory is reported as unavailable, never guessed from the
     const s = observation(); s.player.weapons = weapons;
     const r = prepareDecision(s);
     assert.equal(inventoryLine(r.sharedState), `Owned weapons: not reported. ${WEAPON_GUIDANCE}`);
-    assert.equal(r.grounding.weapon, undefined);
+    assert.equal(r.automatic.weapon, null);
     assert.ok(r.sharedState.includes("held shotgun"), "the actual HUD-held label is separate evidence");
   }
 });
@@ -74,7 +74,7 @@ for (const weapon of ["axe", "shotgun"]) test(`one owned ${weapon} remains known
   const r = prepareDecision(s); r.responses = decisionReplies(r, { action: "forward" });
   const chosen = resolveSelection(r);
   assert.equal(inventoryLine(r.sharedState), `Owned weapons: ${weapon}. ${WEAPON_GUIDANCE}`);
-  assert.equal(chosen.params.weapon, 0); assert.equal(chosen.weaponSelection, null); assert.equal(r.sampling.heads.weapon, undefined);
+  assert.equal(chosen.params.weapon, profile.id); assert.equal(chosen.weaponSelection.name, weapon); assert.equal(r.sampling.heads.weapon, undefined);
 });
 
 test("new pickups and episode resets update inventory from the fresh HUD, not sightings or old requests", () => {
@@ -83,7 +83,7 @@ test("new pickups and episode resets update inventory from the fresh HUD, not si
   const pickedUp = prepareDecision(s);
   assert.equal(inventoryLine(before.sharedState), `Owned weapons: axe, shotgun. ${WEAPON_GUIDANCE}`);
   assert.equal(inventoryLine(pickedUp.sharedState), `Owned weapons: axe, shotgun, double shotgun. ${WEAPON_GUIDANCE}`);
-  assert.match(pickedUp.sharedState, /held double shotgun/); assert.match(pickedUp.grounding.weapon.criteria.w3, /\(held\)$/);
+  assert.match(pickedUp.sharedState, /held double shotgun/); assert.equal(pickedUp.automatic.weapon.weapon, 3);
   const reset = observation(); reset.epoch++;
   assert.equal(inventoryLine(prepareDecision(reset).sharedState), inventoryLine(before.sharedState));
 });
@@ -96,33 +96,30 @@ test("a refused switch retains the actual held weapon and full owned inventory, 
   const r = prepareDecision(after, memory.describe(after));
   assert.match(r.sharedState, /held shotgun/); assert.match(r.sharedState, /requested double shotgun not equipped/);
   assert.ok(inventoryLine(r.sharedState).includes("double shotgun"));
-  assert.match(r.grounding.weapon.criteria.w3, /1 shells; switch needs 2/);
+  assert.equal(r.automatic.weapon.weapon, 2);
 });
 
-for (const name of ["double shotgun", "super nailgun"]) test(`${name}: static strength and switch minimum are evidence, not an automatic weapon ranking/veto`, () => {
+for (const name of ["double shotgun", "super nailgun"]) test(`${name}: static strength and switch minimum constrain automatic equipment without filtering inventory`, () => {
   const profile = WEAPON_PROFILES.find(w => w.name === name), weapon = { weapon: profile.id, name }, s = observation();
   assert.match(profile.reach, /stronger ranged/);
   s.player.weapons.push({ id: profile.id, name }); s.player[profile.ammo] = 1;
   assert.match(weaponOption(weapon, s.player), /switch needs 2/);
-  assert.ok(prepareDecision(s).grounding.weapon.criteria[`w${profile.id}`]);
+  assert.notEqual(prepareDecision(s).automatic.weapon.weapon, profile.id);
   s.player.weapon = name;
   assert.doesNotMatch(weaponOption(weapon, s.player), /needs|EMPTY/, "already held: native one-round fallback still fires");
   s.player[profile.ammo] = 0;
-  assert.match(weaponOption(weapon, s.player), /EMPTY/); assert.ok(prepareDecision(s).grounding.weapon.criteria[`w${profile.id}`]);
+  assert.match(weaponOption(weapon, s.player), /EMPTY/); assert.notEqual(prepareDecision(s).automatic.weapon.weapon, profile.id);
   s.player[profile.ammo] = undefined;
   assert.match(weaponOption(weapon, s.player), new RegExp(`unknown ${profile.ammo}`)); assert.doesNotMatch(weaponOption(weapon, s.player), /needs|EMPTY/);
 });
 
-test("best-weapon guidance does not disable weapon sampling, rewrite probabilities or replace a lower-rated axe draw", () => {
-  const r = prepareDecision(observation()); r.responses = decisionReplies(r, { action: "engage", weapon: "w2" });
-  const answer = r.responses.find(r => r.answers.weapon).answers.weapon;
-  answer.probabilities = { w1: 0.05, w2: 0.95 };
-  const raw = structuredClone(r.responses), draws = [0.5, 0.5, 0.01];
+test("automatic equipment never fabricates a model answer or changes the sampled action probabilities", () => {
+  const r = prepareDecision(observation()); r.responses = decisionReplies(r, { action: "engage" });
+  const raw = structuredClone(r.responses), draws = [0.5];
   const chosen = resolveSelection(r, { random: () => draws.shift() });
-  assert.equal(chosen.params.weapon, 1); assert.equal(chosen.weaponSelection.id, "w1");
-  assert.equal(chosen.weaponSelection.answer.choice, "w2"); assert.equal(r.sampling.heads.weapon.draw, 0.01);
-  assert.equal(r.sampling.heads.weapon.method, "categorical-v1"); assert.equal(draws.length, 0);
-  assert.deepEqual(r.responses, raw);
+  assert.equal(chosen.params.weapon, 2); assert.equal(chosen.weaponSelection.id, "w2");
+  assert.equal(chosen.weaponSelection.answer, undefined); assert.equal(r.sampling.heads.weapon, undefined);
+  assert.equal(draws.length, 0); assert.deepEqual(r.responses, raw);
 });
 
 test("shared visual prose factors identical attributes without dropping kinds/counts or merging unlike poses/groups", () => {

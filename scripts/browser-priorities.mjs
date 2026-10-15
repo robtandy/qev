@@ -156,16 +156,16 @@ export async function checkPriorities({ evaluate, check, until, call, dragEvents
       try {document.querySelector('#export').click();}
       finally {URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}
     })()`);
-    await check("version-14 traces preserve priorities, original responses, replayable samples and concurrent equipment",  `
+    await check("version-15 traces preserve priorities, original responses, replayable samples and concurrent equipment",  `
       const trace=await priorityTest.exported, {objectivesFor}=await import('/src/objective.js');
-      return trace.version===14 && trace.samplingMethod==='categorical-v1' && trace.controlMode==='player-observable' && JSON.stringify(trace.priorityOrder)===JSON.stringify(qev.priorityOrder) &&
+      return trace.version===15 && trace.samplingMethod==='categorical-v1' && trace.controlMode==='visible-assisted' && JSON.stringify(trace.priorityOrder)===JSON.stringify(qev.priorityOrder) &&
         JSON.stringify(trace.objectives)===JSON.stringify(objectivesFor(qev.priorityOrder)) &&
         trace.records[0].priorityOrder[0]==='explore' && trace.records[0].requests[0].state===priorityTest.originalState &&
         trace.records.every(record=>record.priorityOrder.length===4 && record.objectives.length===4) &&
         trace.records.filter(r=>r.selected).every(r=>r.sampling.complete && r.selected.optionId===r.sampling.heads.action.optionId &&
           r.sampling.heads.action.sdkChoice===r.responses[0].answers.action.choice &&
-          r.selected.weaponSelection.id===r.sampling.heads.weapon.optionId &&
-          r.sampling.heads.weapon.sdkChoice===r.responses.find(response=>response.answers.weapon).answers.weapon.choice);
+          Object.keys(r.sampling.heads).join(',')==='action' && r.requests.length===1 &&
+          r.selected.weaponSelection?.method==='strongest-loaded-v1' && !r.selected.weaponSelection.answer && !!r.automatic);
     `);
   } finally {
     await evaluate(`qev.pause();qev.agent.invalidate();qev.agent.getModel=priorityTest.getModel;

@@ -1,27 +1,20 @@
 # Probability sampling and return to level view
 
-Two user-approved changes supersede the earlier strict top-choice policy and retained-pitch
-behavior. They do not add tactical filters, hidden geometry, target substitutions or a second
-controller. Earlier top-choice gameplay reports remain historical evidence, not sampling trials.
+Action sampling and bounded pitch recovery supersede the earlier strict top-choice policy
+and retained-pitch behavior. The later user-approved [automatic bindings](automatic-bindings.md)
+replace target/item/weapon questions and their sampling. Only the action is sampled now; earlier
+multi-head/top-choice gameplay reports remain historical, not current-policy results.
 
 ## Sample the model's distributions
 
 `src/sampling.js` implements full categorical (inverse-CDF) sampling. The default controller
-uses one uniform `Math.random()` draw per **used choice head**, in this order:
-
-1. Tactic (`action`).
-2. Its target (`aim` or `item`), only if the sampled tactic requires that binding.
-3. Concurrent equipment (`weapon`), only if multiple owned weapons were offered.
-
-Even a one-option head records its draw. An absent equipment question does not acquire an
-invented answer/draw; native weapon `0` still means no switch request. Unused answers remain
-in the exact response but cannot add a target to a movement or change a tactic into an attack.
-The heads remain independent model questions, **not a jointly calibrated policy**.
-
-In the later best-weapon/inventory follow-up, the user explicitly chose **Keep weapon sampling**.
-All heads now receive the full owned inventory and ammunition, with best-effective-loaded-gun /
-axe-last-resort guidance. Weapons are still sampled; there is no argmax exemption, probability
-rewrite or fixed best-weapon picker. See [inventory details](weapon-and-death-awareness.md#complete-inventory-and-best-weapon-guidance-user-approved-follow-up).
+uses one uniform `Math.random()` draw for **action**, the only normal-play question.
+Even a one-option action distribution records its draw. Nearest visible targets and strongest
+loaded equipment are automatic assistance, with no invented model answers or random draws.
+Unrequested extra SDK fields remain in the raw response but cannot add targets or change tactics.
+Native weapon `0` still means no switch request when no usable owned weapon can be established.
+The action state retains full owned inventory, ammunition and actual held reach. The newest
+request for automatic equipment supersedes the earlier **Keep weapon sampling** preference.
 
 For probabilities in offer order, compute the cumulative sum divided by their total. Select
 the half-open interval `[lower, upper)` containing the draw. This normalizes only the rounding
@@ -33,31 +26,32 @@ rejection sampling is applied. Zero-weight choices cannot be sampled. Undocument
 Validation is still strict: typed answers, exact offered keys, finite nonnegative probabilities,
 positive total near one within the existing rounding tolerance, and a valid SDK argmax consistent
 with its returned distribution. Invalid, saturated, cancelled or stale scoring results cannot
-execute. Malformed used bindings reject the whole sampled decision. No alternate enemy, gun
-or tactic is substituted, and **a rejected application is never redrawn**. A new observation and
+execute. Missing/contradictory required nearest markers reject the sampled decision. Approved
+automatic bindings refresh at application, but the tactic is unchanged and **a rejected application is never redrawn**. A new observation and
 new scoring request are required. Stop/Step do not draw again from an already scored decision.
 
 The SDK's `answer.choice` remains its original argmax, including rounded ties. It can legitimately
 differ from the executed sample. `rankDecision()` still validates/ranks the original response for
-inspection, not execution. `resolveSelection()` samples the tactic and required bindings exactly
-once per record; even partially rejected records cannot be sampled again. The explicit `noul`
-diagnostic retains highest-rating tactic selection: its independent favorable ratings are not
-silently misrepresented as categorical probabilities. Its choice-type binding heads are sampled.
+inspection, not execution. `resolveSelection()` samples the tactic exactly once and records its
+automatic bindings; even partially rejected records cannot be sampled again. The explicit `noul`
+diagnostic retains highest-rating tactic selection: independent favorable ratings are not
+misrepresented as categorical probabilities. It has no binding questions/draws either.
 There is no automatic format fallback or production argmax selector.
 
 ### Inspect and reproduce a selection
 
-Trace version **14** records `samplingMethod: "categorical-v1"`. Each scored record has
-`sampling.complete` and `sampling.heads`, with these fields for every used choice head:
+Trace version **15** records `samplingMethod: "categorical-v1"`. Each scored record has
+`sampling.complete` and `sampling.heads`, with these fields for the action head:
 
 - `question`, `responseIndex`, and `options` in their original offer order;
 - `sdkChoice` (unchanged argmax) and `optionId` / `index` (the actual sampled choice);
 - `draw` in `[0, 1)`, the selected half-open `interval`, `probability` (original weight),
   `totalProbability`, and `normalizedProbability` (weight / total).
 
-`selectedIndex` and `selected` refer to the sample, **not `ranking[0]`**. Target and equipment
-selections also carry their sampling metadata; their copied `answer.choice` remains the SDK's
-answer and can differ from their selected `id`. The cards label completed choice decisions
+`selectedIndex` and `selected` refer to the sample, **not `ranking[0]`**. Target/equipment
+selections carry automatic method identifiers, not SDK answers or sample metadata.
+`automatic` / `selectedAtScore` preserve score-time bindings; `automaticAtApply` records the
+fresh execution-time plan. The cards label completed choice decisions
 **sampled**. Exact responses still show the original answers; **Observation & outcome** contains
 the sampling ledger and resolved command. The displayed percentage is the model's tactic
 probability, not the probability of the whole composite decision.
@@ -68,7 +62,7 @@ and interval. No RNG seed or knowledge of the browser's private PRNG state is ne
 per-decision audit. It is not a deterministic replay of game physics or model timing.
 
 The checked-in `examples/combat-decision.json` uses explicitly illustrative probabilities and
-fixed draws: Engage is sampled instead of the SDK's top back-fire. It is not captured gameplay.
+one fixed draw: Engage is sampled instead of the SDK's top back-fire. It is not captured gameplay.
 Lifecycle/native fixtures use one-hot mock distributions; nontrivial distributions, boundaries,
 rounded ties, tiny tails, invalid RNG values and non-argmax execution have separate tests.
 
@@ -108,14 +102,14 @@ counter change in that record's window, **not extra action ticks, movement or hi
 may finish before all idle cleanup does; later snapshots retain the cumulative count. World
 changes/absent counters abstain rather than inventing a cross-epoch execution delta.
 
-The normal engine now requires screen capability **3**, control capability **7**. Snapshot
-schema remains **4**; trace export is **14**. Rebuild the engine and reload the app/reselect the
+The normal engine now requires screen capability **4**, control capability **8**. Snapshot
+schema is **5**; trace export is **15**. Rebuild the engine and reload the app/reselect the
 model so old code cannot silently retain the earlier behavior.
 
 ## Validation boundary
 
-- `tests/sampling.test.mjs`: deterministic distribution coverage/replay, non-argmax tactic +
-  target + equipment, untouched responses, used-head accounting, no redraw on rejection,
+- `tests/sampling.test.mjs`: deterministic distribution coverage/replay, non-argmax tactics,
+  automatic bindings without extra draws, untouched responses, no redraw on rejection,
   stale/token-limit guards, and actual Agent score/Step/live lifecycles.
 - `tests/recenter.c` / `tests/recenter.test.mjs`: ASan/UBSan, every native pitch from −70° to
   +80°, monotonic/rate-bounded recovery, zero overshoot, target/look/Stop priority, tick/wall
