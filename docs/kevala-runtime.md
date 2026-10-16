@@ -69,8 +69,10 @@ checkpoint and default to BF16. qev does neither.
 Both are from immutable pack repository revision
 `e75a06d9329e19fe879f44cfcce33914fb96dade`. Load options specify Q8 and the pack/hash, with no
 checkpoint-conversion fallback if that pack is unavailable. Startup still downloads no model;
-selection is required. Upstream cache-identity changes may cause a one-time download even when
-an older runtime had cached the same weights.
+selection is required. The new runtime caches these packs under their pinned URLs rather than the
+old runtime's cache keys, so the first load downloads the selected pack again (Laya 479 MB,
+Kev 857 MB). The old copy is neither reused nor automatically deleted; clearing this site's data
+in the browser removes it, along with any pack the new runtime has cached.
 
 ## What changes—and what does not
 
@@ -101,8 +103,10 @@ npm run test:pages -- --model=laya --backend=wasm
 
 The upgrade passed **423 unit/native tests** and **175 muted browser checks**, plus project-path
 checks of both real models on WebGPU and real Laya on CPU/Wasm. An independent clean install/build
-produced identical hashes for all three Wasm flavors. These are functional checks, not a Pixel
-benchmark or a sustained-gameplay pass.
+produced identical hashes for all three Wasm flavors, as did the Linux CI build that was deployed.
+The deployed site passed the same project-path checks with both real models, and its old
+unversioned runtime URLs return 404. These are functional checks, not a Pixel benchmark or a
+sustained-gameplay pass.
 
 Browser harnesses verify `--mute-audio` before loading any app page. Tests cover source/lock/build
 mismatches, missing/modified Wasm, symlinks, current-only asset paths, no unsolicited model
