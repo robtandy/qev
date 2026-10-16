@@ -6,12 +6,13 @@ Local decision models playing Quake in the browser through [Qwasm](https://githu
 
 ## Build and run
 
-Requires Node.js 22+, Python 3, Git, `make`, and `unzip`. Tested in Chrome.
+Requires Node.js 22+, [rustup](https://rustup.rs/), Python 3, Git, `make`, and `unzip`. Tested in Chrome.
 
 ```sh
 git clone https://github.com/robtandy/qev.git
 cd qev
 npm ci --ignore-scripts
+npm run setup:kevala
 npm run setup:engine
 npm run build:engine
 npm run setup:demo
@@ -23,11 +24,17 @@ Open **http://127.0.0.1:8090/**. Choose **Kev** or **Laya** to load it, then **S
 keeping the model and settings. Gameplay has sound. The default is map 6 on Hard.
 See [How it works](#how-it-works) for the control policy and perception limits; the same policy is included in exported traces.
 
-Setup downloads verified LibreQuake assets and the toolchain into ignored `build/`.
+Demo/Emscripten setup downloads verified assets and its toolchain into ignored `build/`.
+Kevala's generated Wasm/compiler artifacts stay in ignored `node_modules/`; rustup manages its pinned toolchain.
 The Git repository contains no game files, model weights, or compiled engine. The Pages site
 publishes the generated engine and verified free demo separately, with notices and corresponding
 source downloads. Models download only on selection and cache in your browser. After local setup,
 just run `npm run serve`.
+
+Kevala is built from pinned upstream revision **`e250209`** with Rust 1.95.0, replacing the older
+npm runtime (both happen to be labeled 0.1.3). There is only one runtime, with revisioned asset
+URLs; existing Laya/Kev Q8 weights stay fixed. See [runtime build and validation](docs/kevala-runtime.md).
+After a fresh `npm ci`, run `npm run setup:kevala` again.
 
 ## GitHub Pages
 

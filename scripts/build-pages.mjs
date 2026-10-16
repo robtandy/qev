@@ -9,6 +9,8 @@ import { DEMO_DIRECTORY, readDemoAssets } from "./demo-assets.mjs";
 import { DEMO } from "../src/demo-manifest.js";
 import { engineSourceDigest } from "./engine-inputs.mjs";
 import { buildPageSources, PAGE_SOURCES } from "./pages-sources.mjs";
+import { verifyKevalaRuntime } from "./kevala-runtime.mjs";
+import { KEVALA_ASSET_PATH } from "../src/kevala-runtime.js";
 
 export const PAGE_ENGINE_FILES = ["qwasm.mjs", "qwasm.wasm", "build.json", "QWASM-LICENSE.txt"];
 export async function verifyPageEngine(root) {
@@ -49,15 +51,14 @@ async function inventory(directory, prefix = "") {
 }
 export async function buildPages(root) {
   const build = await verifyPageEngine(root), demo = await readDemoAssets(resolve(root, DEMO_DIRECTORY));
-  const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
-  const vendor = JSON.parse(await readFile(resolve(root, "node_modules/kevala/package.json"), "utf8"));
-  if (vendor.name !== "kevala" || vendor.version !== packageJson.dependencies.kevala) throw new Error("Kevala does not match the pinned package version.");
+  const vendor = await verifyKevalaRuntime(root);
   const stage = await mkdtemp(resolve(root, "build/pages-site-")), output = resolve(root, "build/site");
   try {
     await copyRuntimeTree(resolve(root, "public"), stage, [".html", ".css", ".svg"]);
     await copyRuntimeTree(resolve(root, "src"), resolve(stage, "src"), [".js"]);
-    await copyRuntimeTree(resolve(root, "node_modules/kevala/js/src"), resolve(stage, "vendor/kevala"), [".js", ".wasm"]);
+    await copyRuntimeTree(resolve(root, "node_modules/kevala/js/src"), resolve(stage, KEVALA_ASSET_PATH), [".js", ".wasm"]);
     await copyFile(resolve(root, "node_modules/kevala/LICENSE"), resolve(stage, "vendor/kevala/LICENSE"));
+    await copyFile(resolve(root, "node_modules/kevala/THIRD_PARTY_NOTICES"), resolve(stage, "vendor/kevala/THIRD_PARTY_NOTICES.txt"));
     for (const name of PAGE_ENGINE_FILES) await copyFile(resolve(root, "build/engine", name), resolve(stage, "engine", name));
     await mkdir(resolve(stage, "demo"));
     for (const [name, bytes] of demo) await writeFile(resolve(stage, "demo", name), bytes); // Verified bytes, no second disk lookup.
@@ -70,7 +71,7 @@ export async function buildPages(root) {
     const dirty = !!execFileSync("git", ["status", "--porcelain", "--untracked-files=normal"], { cwd: root, encoding: "utf8" }).trim();
     if (process.env.GITHUB_ACTIONS === "true" && dirty) throw new Error("CI must publish committed source, not a modified working tree.");
     await writeFile(resolve(stage, "deployment.json"), JSON.stringify({ repository: "robtandy/qev", commit, dirty, builtAt: new Date().toISOString(),
-      engine: build, demo: DEMO.id, kevala: vendor.version, sources: PAGE_SOURCES, files }, null, 2) + "\n");
+      engine: build, demo: DEMO.id, kevala: vendor, sources: PAGE_SOURCES, files }, null, 2) + "\n");
     await rm(output, { recursive: true, force: true }); await rename(stage, output);
     console.log(`Pages artifact: ${output} (${(files.reduce((n, f) => n + f.bytes, 0) / 1024 / 1024).toFixed(1)} MiB, ${files.length} files). No model weights or evaluation export.`);
     return output;

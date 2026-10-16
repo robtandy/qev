@@ -71,7 +71,7 @@ Pitch recovery, movement limits, normal damage/weapons, native ammo fallback and
 are unchanged. Engagement still adds advance only while the actual HUD weapon is the axe;
 stationary and raw attacks do not gain movement.
 
-Current trace **16**, snapshot **5**, screen capability **4**, control capability **9**
+Current trace **17**, snapshot **5**, screen capability **4**, control capability **9**
 (the original automatic-binding release used trace 15/control 8):
 
 - `requests` / `responses`: actual single action question and unchanged SDK reply/extras.
@@ -90,7 +90,8 @@ questions/draws, and is never an automatic fallback.
 
 The measurements below are from the initial automatic-binding release. Subsequent deadline
 handling, dispatch/presentation optimizations and compact diagnostics are documented separately
-in [mobile performance](mobile-performance.md); neither set is a Pixel benchmark.
+in [mobile performance](mobile-performance.md), with the later [Kevala runtime update](kevala-runtime.md)
+validated separately. None is a Pixel benchmark.
 
 - Native nearest-selector tests use ASan/UBSan, including hidden/unreadable coordinates,
   3D ordering, ties, invalid numbers and frame reset. Integration tests check the final-pixel

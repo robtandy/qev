@@ -132,7 +132,7 @@ same-epoch window separately from action ticks; cleanup may outlast a record's a
   model/settings/history while restarting the actual map/skill, stopped.
 - Memory records actual observations/outcomes; zero-input commands create no experience.
   HUD changes describe a time interval, not guaranteed causality from the selected action.
-- Trace **16**, snapshot **5**, screen capability **4**, control capability **9** make the new
+- Trace **17**, snapshot **5**, screen capability **4**, control capability **9** make the new
   boundary explicit. Old native builds are rejected, not silently reused.
 - Evaluation-only aggregate motion telemetry never enters model inputs or the normal build.
   Browser harnesses launch **and verify `--mute-audio` before loading the app**; visitors retain sound.

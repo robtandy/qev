@@ -10,7 +10,9 @@ and [qwasm-integration.md](qwasm-integration.md) for upstream hooks.
 
 - Qwasm: `f56b5e71e4be8effede29bae1785a5306dcc0249`.
 - Emscripten: **3.1.74**, SDK source `3d6d8ee910466516a53e665b86458faa81dae9ba`.
-- Kevala: npm **0.1.3**, locked in `package-lock.json`.
+- Kevala: upstream **`e250209f507f8a9a17d9a24fb8c6e197424890c3`**, commit archive/integrity locked
+  in `package-lock.json`, built by `npm run setup:kevala` with upstream Rust **1.95.0**. The upstream
+  version still says 0.1.3, but this replaces the older npm release. [Build/provenance](kevala-runtime.md).
 - `scripts/build-engine.mjs` restores/reapplies 15 patched upstream files in the pinned,
   generated `build/qwasm` checkout and copies `qev_bridge.c/h`, `qev_pixels.c/h` and
   `qev_animation.c/h`, `qev_recenter.c/h`, `qev_nearest.c/h` and `qev_present.c/h` there. `animation-data.mjs` validates `engine/animation-labels.json`
@@ -292,7 +294,7 @@ requests, responses and outcome are inserted as text, not HTML. Identical submit
 shown once verbatim; different baseline states remain an ordered list. Copy uses that card's
 payload; old cards never become executable. History retains at most 50 records.
 
-Exports are **version 16**: compact diagnostics and reply/application freshness evidence, plus the single control policy, active/per-record priorities, original requests
+Exports are **version 17**: runtime source identity, compact diagnostics and reply/application freshness evidence, plus the single control policy, active/per-record priorities, original requests
 and responses, action `sampling` ledger, separate automatic score/application plans, `selectedAtScore`,
 resolved `selection` / `weaponSelection` with automatic method identifiers, full
 observations, image/history evidence, application age, actual input-tick accounting,

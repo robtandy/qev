@@ -3,16 +3,23 @@ import { LIVE_MISS_LIMIT } from "./live-budget.js";
 
 const number = n => typeof n === "number" && Number.isFinite(n) ? Math.round(n * 10) / 10 : null;
 const delta = (a, b, key) => Number.isFinite(a?.[key]) && Number.isFinite(b?.[key]) && b[key] >= a[key] ? number(b[key] - a[key]) : null;
+function tuningSummary(tuning) {
+  if (!tuning) return null;
+  const points = (Array.isArray(tuning.points) ? tuning.points : []).flatMap(shape => Array.isArray(shape?.points) ? shape.points : []);
+  return { method: tuning.method, reason: tuning.reason ?? null, elapsedMs: number(tuning.elapsedMs), truncated: tuning.truncated === true,
+    selections: Object.fromEntries(["generic", "wide"].map(kernel => [kernel, points.filter(p => p.kernel === kernel).length])) };
+}
 
 /** Small export/copy summary, not model input. Full traces keep original values,
  * replies, probabilities and all observations; this deliberately omits those. */
-export function diagnosticSummary({ records = [], model = null, observation = null, native = null, speed = null, stoppedReason = null, monotonicNow = null } = {}) {
+export function diagnosticSummary({ records = [], model = null, observation = null, native = null, speed = null, stoppedReason = null, monotonicNow = null, runtime = null } = {}) {
   return {
     version: 1, purpose: "Performance and decision-rejection summary; not model input or a gameplay-quality benchmark",
-    speed, stoppedReason,
+    speed, stoppedReason, runtime,
     limits: { maxGameTicks: MAX_DECISION_AGE_TICKS, maxWallMs: MAX_DECISION_AGE_MS, consecutiveMissesBeforeStop: LIVE_MISS_LIMIT },
     model: model ? { arch: model.arch ?? null, backend: model.backend ?? null, gpu: model.gpu ?? null,
-      packBytes: model.pack?.bytes ?? null, loadMs: number(model.loadMs), warmupMs: number(model.warmupMs) } : null,
+      packBytes: model.pack?.bytes ?? null, loadMs: number(model.loadMs), warmupMs: number(model.warmupMs),
+      gpuTuning: tuningSummary(model.gpuTuning) } : null,
     world: observation ? { map: observation.map, difficulty: observation.difficulty, epoch: observation.epoch,
       tick: observation.tick, paused: observation.paused, alive: observation.alive,
       actionSerial: observation.actionSerial, actionTicks: observation.actionTicks } : null,

@@ -73,7 +73,7 @@ can run Laya within the unchanged live budget.
   time so far (not a fabricated completed inference time).
 - CPU-side native call timings and frame/upload counts over inference, when available.
 
-The full **version-16 trace** still retains original requests, responses, probabilities, draws,
+The full **version-17 trace** additionally identifies the [current Kevala runtime](kevala-runtime.md) and still retains original requests, responses, probabilities, draws,
 observations and automatic binding evidence. Copying the compact summary does not alter them.
 The native **control capability is 9**; snapshot 5 and screen capability 4 are unchanged.
 
@@ -110,6 +110,8 @@ Those are functional checks, not proof of successful sustained play.
   (**509 / 510 / 508 / 510**) and **84** readable head/option canaries. One observed frozen decision
   was about 159 ms (393 tokens). This is not a before/after benchmark or a Pixel result.
 
-The pinned Kevala package and neighboring repository were not modified. Pixel inference throughput
-and perceived smoothness remain unverified. If Auto still stops, one stopped Step plus **Copy
+The diagnostics/presentation change above did not modify Kevala. The subsequent
+[pinned runtime replacement](kevala-runtime.md) builds current upstream code while retaining model
+weights; the neighboring repository remains untouched. Pixel inference throughput and perceived
+smoothness remain unverified. If Auto still stops, one stopped Step plus **Copy
 diagnostics** can distinguish model time from native/inspector work without another enormous paste.

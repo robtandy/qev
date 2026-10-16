@@ -12,6 +12,7 @@ import { SAMPLING_METHOD } from "./sampling.js";
 import { appURL } from "./paths.js";
 import { LiveBudget } from "./live-budget.js";
 import { diagnosticSummary } from "./diagnostics.js";
+import { KEVALA_RUNTIME, KEVALA_ENTRY, kevalaOptions } from "./kevala-runtime.js";
 
 const $ = (id) => document.getElementById(id);
 const pageTitle = document.title;
@@ -34,7 +35,7 @@ function diagnostics() {
   let native = null, observation = snapshot;
   try { observation = engine?.snapshot() ?? snapshot; } catch { /* Keep the last UI observation after an engine error. */ }
   try { native = engine?.diagnostics() ?? null; } catch { /* Keep export available after an engine error. */ }
-  return diagnosticSummary({ records: agent?.history || [], model: (agent?.getModel() || model)?.info,
+  return diagnosticSummary({ runtime: KEVALA_RUNTIME, records: agent?.history || [], model: (agent?.getModel() || model)?.info,
     observation, native, speed: native?.speed ?? Number($("speed").value), stoppedReason: deadlineStop, monotonicNow: performance.now() });
 }
 function log(line) {
@@ -285,11 +286,11 @@ async function loadSelectedModel() {
   updateControls();
   try {
     previous?.dispose();
-    if (!["auto", "wasm"].includes(backend)) throw new Error("Choose Auto / GPU or CPU / WASM as the backend.");
-    const { Kevala } = await import(appURL("vendor/kevala/index.js"));
+    const options = kevalaOptions(name, backend);
+    const { Kevala } = await import(appURL(KEVALA_ENTRY));
     if (abort.signal.aborted) return;
     const loaded = await Kevala.load({
-      model: name, backend, signal: abort.signal,
+      ...options, signal: abort.signal,
       onProgress: (p) => {
         if (loadingModel !== job || abort.signal.aborted) return;
         $("model-status").textContent = p.message || `${p.phase}${p.total ? ` · ${Math.round(p.loaded / p.total * 100)}%` : "…"}`;
@@ -300,8 +301,8 @@ async function loadSelectedModel() {
     // Some initialization work may finish after cancellation. Never install it.
     if (abort.signal.aborted) { loaded.dispose(); return; }
     model = loaded;
-    $("model-status").textContent = `${name} ready · ${model.info.backend}${model.info.gpuUnavailable ? " · GPU unavailable" : ""}`;
-    $("model-status").title = model.info.gpuUnavailable || "Inference stays on this device.";
+    $("model-status").textContent = `${name} ready · ${model.info.backend} · ${KEVALA_RUNTIME.revision.slice(0, 7)}${model.info.gpuUnavailable ? " · GPU unavailable" : ""}`;
+    $("model-status").title = `${model.info.gpuUnavailable || "Inference stays on this device."} Kevala ${KEVALA_RUNTIME.revision}; existing Q8 model weights.`;
   } catch (error) {
     if (!abort.signal.aborted) {
       $("model-status").textContent = `Model load failed: ${error.message} Select a model to retry.`;
@@ -337,7 +338,7 @@ for (const id of ["map", "difficulty"]) $(id).addEventListener("change", () => g
 $("speed").addEventListener("change", () => guard(async () => engine?.speed(Number($("speed").value))));
 $("export").addEventListener("click", () => {
   const priorityOrder = currentPriorityOrder();
-  downloadJSON({ version: 16, samplingMethod: SAMPLING_METHOD, controlMode: CONTROL_MODE, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), memory: agent.observations.describe(snapshot), observationPolicy: OBSERVATION_POLICY, controller: CONTROLLER_POLICY, diagnostics: diagnostics(), records: agent.history }, "qev-trace.json");
+  downloadJSON({ version: 17, runtime: KEVALA_RUNTIME, samplingMethod: SAMPLING_METHOD, controlMode: CONTROL_MODE, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), memory: agent.observations.describe(snapshot), observationPolicy: OBSERVATION_POLICY, controller: CONTROLLER_POLICY, diagnostics: diagnostics(), records: agent.history }, "qev-trace.json");
 });
 $("diagnostics").addEventListener("click", async () => {
   const value = diagnostics();
@@ -371,5 +372,5 @@ $("model").value = "";
 renderDecision();
 fitGame();
 // Diagnostic handles, not an externally supported API. Tests use the same engine/agent as the UI.
-window.qev = { get engine() { return engine; }, get agent() { return agent; }, get model() { return model; }, get respawner() { return respawner; }, get playMode() { return playMode; }, get controlMode() { return CONTROL_MODE; }, get priorityOrder() { return currentPriorityOrder(); }, get engineLog() { return engineLines.slice(); }, diagnostics, pause: stop, score, step };
+window.qev = { runtime: KEVALA_RUNTIME, get engine() { return engine; }, get agent() { return agent; }, get model() { return model; }, get respawner() { return respawner; }, get playMode() { return playMode; }, get controlMode() { return CONTROL_MODE; }, get priorityOrder() { return currentPriorityOrder(); }, get engineLog() { return engineLines.slice(); }, diagnostics, pause: stop, score, step };
 void guard(startDemo);

@@ -103,7 +103,7 @@ may finish before all idle cleanup does; later snapshots retain the cumulative c
 changes/absent counters abstain rather than inventing a cross-epoch execution delta.
 
 The normal engine now requires screen capability **4**, control capability **9**. Snapshot
-schema is **5**; trace export is **16**. Rebuild the engine and reload the app/reselect the
+schema is **5**; trace export is **17**. Rebuild the engine and reload the app/reselect the
 model so old code cannot silently retain the earlier behavior.
 
 ## Validation boundary

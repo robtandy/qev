@@ -5,10 +5,12 @@ import { dirname, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEMO_ASSETS, DEMO_SETUP_HELP } from "../src/demo-manifest.js";
 import { DEMO_DIRECTORY, readDemoAssets } from "./demo-assets.mjs";
+import { KEVALA_ASSET_PATH } from "../src/kevala-runtime.js";
+import { verifyKevalaRuntime } from "./kevala-runtime.mjs";
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".wasm": "application/wasm", ".svg": "image/svg+xml", ".txt": "text/plain; charset=utf-8" };
-const mounts = [["/engine/", "build/engine"], ["/vendor/kevala/", "node_modules/kevala/js/src"], ["/src/", "src"], ["/", "public"]];
+const mounts = [["/engine/", "build/engine"], [`/${KEVALA_ASSET_PATH}`, "node_modules/kevala/js/src"], ["/src/", "src"], ["/", "public"]];
 const engineFiles = new Set(["qwasm.mjs", "qwasm.wasm", "build.json", "QWASM-LICENSE.txt"]);
 
 export function makeServer(projectRoot = root, { evaluationEngine = false } = {}) {
@@ -58,6 +60,7 @@ export function makeServer(projectRoot = root, { evaluationEngine = false } = {}
   });
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await verifyKevalaRuntime(root);
   const port = Number(process.argv.find((arg) => arg.startsWith("--port="))?.slice(7) || process.env.PORT || 8090);
   makeServer().listen(port, "127.0.0.1", () => console.log(`qev: http://127.0.0.1:${port} (local only; only the verified LibreQuake demo PAKs may be served)`));
 }

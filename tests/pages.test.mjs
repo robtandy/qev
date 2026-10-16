@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { appURL } from "../src/paths.js";
+import { KEVALA_ASSET_PATH } from "../src/kevala-runtime.js";
 import { copyRuntimeTree, PAGE_ENGINE_FILES, verifyPageEngine } from "../scripts/build-pages.mjs";
 import { ENGINE_INPUTS, engineSourceDigest } from "../scripts/engine-inputs.mjs";
 import { PAGE_SOURCES } from "../scripts/pages-sources.mjs";
@@ -13,7 +14,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 async function temporary(t) { const dir = await mkdtemp(join(tmpdir(), "qev-pages-")); t.after(() => rm(dir, { recursive: true, force: true })); return dir; }
 for (const base of ["http://127.0.0.1:8090/", "https://robtandy.github.io/qev/", "https://example.org/nested/app/"]) {
   test(`all runtime asset families stay inside ${base}`, () => {
-    for (const path of ["engine/qwasm.mjs", "engine/qwasm.wasm", "vendor/kevala/index.js", "vendor/kevala/engine-worker.js", "demo/pak0.pak", "src/app.js"])
+    for (const path of ["engine/qwasm.mjs", "engine/qwasm.wasm", `${KEVALA_ASSET_PATH}index.js`, `${KEVALA_ASSET_PATH}engine-worker.js`, "demo/pak0.pak", "src/app.js"])
       assert.equal(appURL(path, base), base + path);
   });
 }

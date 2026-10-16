@@ -193,4 +193,4 @@ level progress only: they do not prove that this target died or attribute every 
 
 All browser checks launch and verify `--mute-audio` before the app loads. Normal gameplay still
 supports sound. The normal engine requires screen capability **4**, control capability **9**;
-exported traces are version **16**. Reload the app after rebuilding the engine.
+exported traces are version **17**. Reload the app after rebuilding the engine.

@@ -1,7 +1,9 @@
 # Qwasm integration and source hooks
 
 qev pins [Qwasm](https://github.com/GMH-Code/Qwasm) commit
-`f56b5e71e4be8effede29bae1785a5306dcc0249`, Emscripten 3.1.74, and Kevala npm 0.1.3.
+`f56b5e71e4be8effede29bae1785a5306dcc0249`, Emscripten 3.1.74, and Kevala source revision
+`e250209f507f8a9a17d9a24fb8c6e197424890c3` (built with upstream Rust 1.95.0).
+The unchanged package label 0.1.3 is not its identity; see [runtime verification](kevala-runtime.md).
 The generated checkout under `build/qwasm` is patched/rebuilt by `scripts/build-engine.mjs`.
 It is not a maintained user fork. See [implementation.md](implementation.md) for the current
 API and [state-and-actions.md](state-and-actions.md) for the single-controller policy.
@@ -100,8 +102,8 @@ separately as automatic choices, refreshed on application but never substituted 
 The original SDK argmax and probabilities stay unchanged. Rejections are never resampled or
 replaced by another tactic. See [automatic bindings](automatic-bindings.md). Independent `noul` tactic ratings remain an
 explicit highest-rating diagnostic, never a fallback or an invented categorical distribution.
-See the [pinned Kevala API](https://github.com/bvolpato/kevala/blob/5f1a7104aa6213cbe52ff03f876b5198fe451595/js/src/index.js)
-and [sequence builder](https://github.com/bvolpato/kevala/blob/5f1a7104aa6213cbe52ff03f876b5198fe451595/crates/kevala/src/sequence.rs).
+See the [pinned Kevala API](https://github.com/bvolpato/kevala/blob/e250209f507f8a9a17d9a24fb8c6e197424890c3/js/src/index.js)
+and [sequence builder](https://github.com/bvolpato/kevala/blob/e250209f507f8a9a17d9a24fb8c6e197424890c3/crates/kevala/src/sequence.rs).
 Do not substitute an unversioned CDN dependency or mutate the separate Kevala/Tetris work.
 
 ## Build/distribution boundary

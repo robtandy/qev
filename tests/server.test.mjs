@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeServer } from "../scripts/serve.mjs";
 import { DEMO_DIRECTORY } from "../scripts/demo-assets.mjs";
+import { KEVALA_ASSET_PATH } from "../src/kevala-runtime.js";
 
 test("public SVG branding is served with an image MIME type and matching GET/HEAD headers", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "qev-brand-server-"));
@@ -24,6 +25,22 @@ test("public SVG branding is served with an image MIME type and matching GET/HEA
     assert.equal(Number(response.headers.get("content-length")), Buffer.byteLength(svg));
     assert.equal(await response.text(), method === "GET" ? svg : "");
   }
+});
+
+test("development serves only the revisioned Kevala path, with no old-runtime alias", async t => {
+  const root = await mkdtemp(join(tmpdir(), "qev-kevala-server-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "public"), { recursive: true });
+  await mkdir(join(root, "node_modules/kevala/js/src"), { recursive: true });
+  await writeFile(join(root, "node_modules/kevala/js/src/index.js"), "export const fixture = true;");
+  const server = makeServer(root); await new Promise(r => server.listen(0, "127.0.0.1", r));
+  t.after(() => new Promise(r => { server.closeAllConnections(); server.close(r); }));
+  const url = `http://127.0.0.1:${server.address().port}/`;
+  const current = await fetch(url + KEVALA_ASSET_PATH + "index.js");
+  assert.equal(current.status, 200); assert.match(current.headers.get("content-type"), /javascript/);
+  assert.equal(await current.text(), "export const fixture = true;");
+  for (const path of ["vendor/kevala/index.js", "vendor/kevala/old/index.js", "node_modules/kevala/js/src/index.js"])
+    assert.equal((await fetch(url + path)).status, 404);
 });
 
 test("development server serves only explicit mounts, never user game assets or project secrets", async (t) => {

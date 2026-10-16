@@ -6,10 +6,11 @@ not a branch containing committed binaries. The `github-pages` environment recor
 
 ## Build and preview
 
-Requires Node.js 22+, Git, Python 3, make, unzip and tar. From a fresh checkout:
+Requires Node.js 22+, rustup, Git, Python 3, make, unzip and tar. From a fresh checkout:
 
 ```sh
 npm ci --ignore-scripts
+npm run setup:kevala
 npm run setup:engine
 npm run build:engine
 npm run setup:demo
@@ -26,7 +27,7 @@ HTTPS on Pages (or localhost for preview) provides a secure context for WebGPU a
 The CPU/Wasm backend is still available through the ordinary backend selector.
 
 The workflow installs the lockfile with lifecycle scripts disabled, runs unit/syntax tests, builds
-with pinned Emscripten 3.1.74, installs and verifies the pinned LibreQuake release, packages the site,
+and verifies the pinned Kevala revision with upstream Rust 1.95.0, builds Quake with pinned Emscripten 3.1.74, installs and verifies the pinned LibreQuake release, packages the site,
 and runs the muted-Chrome static smoke test before upload/deploy. Third-party Actions use full
 commit pins. Build permission is read-only; only the deployment job gets `pages: write` and
 `id-token: write`. Concurrent deployments are serialized.
@@ -36,7 +37,9 @@ commit pins. Build permission is read-only; only the deployment job gets `pages:
 `build-pages.mjs` uses an allowlist, not a recursive copy of the repository or general build tree:
 
 - Public HTML/CSS/SVG and application JavaScript.
-- The installed, pinned Kevala browser JS/Wasm runtime and its Apache 2.0 license.
+- The source-built, pinned Kevala browser JS/Wasm runtime under its commit-specific directory,
+  with its Apache 2.0 license and third-party notices. Source/build checks reject stale or modified
+  files; there is no old-runtime alias. See [Kevala build/provenance](kevala-runtime.md).
 - Normal engine `qwasm.mjs`, `qwasm.wasm`, `build.json`, and GPL license. The builder checks a
   native source/build-input digest and inspects the actual Wasm export table to reject the test
   evaluation engine, even if its metadata were mislabeled. The runtime retains its capability checks.
@@ -44,7 +47,8 @@ commit pins. Build permission is read-only; only the deployment job gets `pages:
   `NOTICE.txt`. Verification returns bytes rather than filenames, avoiding a second unverified read.
 - License texts and the corresponding-source archives below.
 - `deployment.json`: Git commit, dirty-tree flag, build/dependency/source revisions, timestamp,
-  and file sizes/SHA-256 hashes. CI refuses to publish a dirty working tree. Local previews may be dirty.
+  and file sizes/SHA-256 hashes. `kevala` records its source commit/digest, toolchain and three
+  binary hashes—not just the ambiguous package version. CI refuses to publish a dirty working tree. Local previews may be dirty.
 
 **Not published:** model weights, `build/engine-evaluation`, local/proprietary assets, snapshots,
 logs, screenshots, gameplay traces, Git metadata, SDK caches, general `node_modules`, or secrets.
@@ -84,7 +88,8 @@ change upstream licenses or model-weight terms.
 npm test
 npm run check
 npm run test:pages
-npm run test:pages -- --model --recenter
+npm run test:pages -- --model=all --recenter
+npm run test:pages -- --model=laya --backend=wasm
 npm run test:pages -- --url=https://robtandy.github.io/qev/ --model --commit=FULL_COMMIT_SHA
 ```
 
@@ -95,8 +100,10 @@ stopped without model downloads, notices/source downloads, one exact native tick
 and no JS exceptions. It checks the compact diagnostics control and passive timing export,
 separate from model observations. It also checks native explicit look-up/down release, leveling, priority and
 Stop/frozen-Step limits. `--recenter` adds the elevated pixel-target recovery fixtures. `--model`
-additionally loads real Laya in its worker and executes a sampled
-frozen Step using the published inventory-aware requests. Test reports/captures stay in ignored
+additionally loads real Laya and executes a sampled frozen Step using the published inventory-aware
+requests. `--model=all` checks both Laya and Kev against their retained pack sizes/checkpoint
+revisions; `--backend=wasm` exercises the CPU backend. Runtime identity and current-only assets
+are checked independently of model loading. Test reports/captures stay in ignored
 `build/pages-*` files; they are not uploaded.
 
 These are functional deployment checks, **not** sustained-gameplay benchmarks. See

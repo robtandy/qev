@@ -19,7 +19,8 @@ export async function checkModelSelection({ evaluate, check, until }) {
   `);
   await until(() => evaluate("!document.querySelector('#auto').disabled"));
   await evaluate(`(async () => {
-    const {Kevala}=await import('/vendor/kevala/index.js');
+    const {KEVALA_ENTRY}=await import('/src/kevala-runtime.js');
+    const {Kevala}=await import('/'+KEVALA_ENTRY);
     window.modelSelectionTest={Kevala,originalLoad:Kevala.load,loads:[],decisions:[],before:qev.engine.snapshot()};
     Kevala.load=options=>new Promise((resolve,reject)=>modelSelectionTest.loads.push({options,resolve,reject}));
     modelSelectionTest.finish=index=>{
@@ -58,7 +59,8 @@ export async function checkModelSelection({ evaluate, check, until }) {
     await change('model', 'laya'); await loadCount(1);
     await check("selecting Laya immediately starts one load with the chosen backend and blocks playback", `
       const job=modelSelectionTest.loads[0], select=document.querySelector('#model');
-      return job.options.model==='laya' && job.options.backend==='wasm' && !job.options.signal.aborted &&
+      return job.options.model.name==='laya' && job.options.model.pack===478886720 && job.options.model.browserConvert===false &&
+        job.options.precision==='q8' && job.options.gpuKernel==='auto' && job.options.backend==='wasm' && !job.options.signal.aborted &&
         select.value==='laya' && select.disabled && document.querySelector('#backend').disabled &&
         !select.closest('.model-setting').classList.contains('needs-selection') &&
         document.querySelector('#model-status').textContent.includes('Laya · 479 MB') &&
@@ -116,7 +118,7 @@ export async function checkModelSelection({ evaluate, check, until }) {
     `);
     await change('backend', 'auto'); await loadCount(4);
     await check("changing the backend reloads the selected model and disposes the old instance", `
-      return modelSelectionTest.loads[3].options.model==='laya' && modelSelectionTest.loads[3].options.backend==='auto' &&
+      return modelSelectionTest.loads[3].options.model.name==='laya' && modelSelectionTest.loads[3].options.backend==='auto' &&
         modelSelectionTest.loads[2].model.disposed===1 && !qev.model && qev.engine.snapshot().paused;
     `);
     await evaluate("modelSelectionTest.finish(3)"); await idle();
@@ -126,7 +128,8 @@ export async function checkModelSelection({ evaluate, check, until }) {
     await change('model', 'kev-0.8b'); await loadCount(5);
     await check("changing models during inference stops the world, invalidates the old decision, and loads Kev", `
       modelSelectionTest.stopped=qev.engine.snapshot();
-      return modelSelectionTest.loads[4].options.model==='kev-0.8b' && modelSelectionTest.loads[3].model.disposed===1 &&
+      return modelSelectionTest.loads[4].options.model.name==='kev-0.8b' && modelSelectionTest.loads[4].options.precision==='q8' &&
+        modelSelectionTest.loads[4].options.model.pack===857259584 && modelSelectionTest.loads[3].model.disposed===1 &&
         !qev.model && !qev.agent.current && modelSelectionTest.oldDecision.status==='cancelled' &&
         qev.engine.snapshot().paused && qev.playMode==='inspection' && document.querySelector('#auto').getAttribute('aria-pressed')==='false';
     `);
