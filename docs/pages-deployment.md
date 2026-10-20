@@ -95,7 +95,7 @@ npm run test:pages -- --url=https://robtandy.github.io/qev/ --model --commit=FUL
 
 Every browser harness launches and verifies Chrome's **`--mute-audio` before loading the app**;
 ordinary visitors retain normal gameplay sound. Set `CHROME_PATH` if Chrome is not at the platform
-default. The static test verifies project-path assets, normal engine capabilities, map 6/Hard startup
+default. The static test verifies project-path assets, normal engine capabilities, map 6/Nightmare startup
 stopped without model downloads, notices/source downloads, one exact native tick, no root-path leaks,
 and no JS exceptions. It checks the compact diagnostics control and passive timing export,
 separate from model observations. It also checks native explicit look-up/down release, leveling, priority and

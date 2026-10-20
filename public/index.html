@@ -26,7 +26,7 @@
     <section class="setup" aria-label="Game and model setup">
       <div class="setup-row">
         <label class="map-setting">Map <select id="map" title="Changing the map loads it immediately and stops the game" disabled><option>Loading demo…</option></select></label>
-        <label class="difficulty-setting">Difficulty <select id="difficulty" title="Changing difficulty reloads the current map and stops the game" disabled><option value="0">Easy</option><option value="1">Normal</option><option value="2" selected>Hard</option><option value="3">Nightmare</option></select></label>
+        <label class="difficulty-setting">Difficulty <select id="difficulty" title="Changing difficulty reloads the current map and stops the game" disabled><option value="0">Easy</option><option value="1">Normal</option><option value="2">Hard</option><option value="3" selected>Nightmare</option></select></label>
         <label class="model-setting needs-selection">Model <select id="model" required aria-describedby="model-status"><option value="" disabled selected>Choose a decision model</option><option value="laya">Laya · 479 MB</option><option value="kev-0.8b">Kev · 857 MB</option></select></label>
         <label class="backend-setting">Backend <select id="backend"><option value="auto">Auto / GPU</option><option value="wasm">CPU / WASM</option></select></label>
         <button id="cancel-model" aria-label="Cancel model download" hidden>Cancel</button>

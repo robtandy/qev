@@ -66,11 +66,12 @@ test("an audio unlock completing after Stop cannot resume simulation or undo nat
   assert.deepEqual(calls, ["pause"]);
 });
 
-test("Hard is the default in both the engine and the initial difficulty selector", () => {
-  assert.equal(DEFAULT_DIFFICULTY, 2);
-  assert.equal(DIFFICULTIES[DEFAULT_DIFFICULTY], "Hard");
+test("Nightmare is the default in both the engine and the initial difficulty selector", () => {
+  assert.equal(DEFAULT_DIFFICULTY, 3);
+  assert.equal(DIFFICULTIES[DEFAULT_DIFFICULTY], "Nightmare");
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
-  assert.match(html, /<option value="2" selected>Hard<\/option>/);
+  assert.match(html, /<option value="3" selected>Nightmare<\/option>/);
+  assert.equal(html.match(/<select id="difficulty"[\s\S]*?<\/select>/)[0].match(/ selected/g).length, 1);
 });
 
 test("all four Quake difficulties are supported, with no coercion of invalid input", () => {

@@ -276,7 +276,7 @@ are not added to model request text. See [sampling and view recovery](sampling-a
 
 ## UI, trace and loading
 
-Default: `lq_e0m6`, Hard (`2`), stopped and silent, no model selected. Choosing Kev/Laya loads it
+Default: `lq_e0m6`, Nightmare (`3`), stopped and silent, no model selected. Choosing Kev/Laya loads it
 immediately, with progress/cancellation and no confirmation or automatic start. Empty selection,
 backend changes without a model and Start without a choice do not download default weights.
 Late/cancelled loads cannot install themselves or overlap another job.

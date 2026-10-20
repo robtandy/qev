@@ -10,7 +10,7 @@ export function engineErrorFromLog(message) {
 }
 
 export const DIFFICULTIES = ["Easy", "Normal", "Hard", "Nightmare"];
-export const DEFAULT_DIFFICULTY = 2;
+export const DEFAULT_DIFFICULTY = 3; // Nightmare
 export function validateDifficulty(value) {
   if (!Number.isInteger(value) || value < 0 || value >= DIFFICULTIES.length) throw new Error("Invalid difficulty. Choose Easy, Normal, Hard, or Nightmare.");
   return value;

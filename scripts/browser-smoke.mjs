@@ -176,9 +176,10 @@ try {
         ['libre quake','https://github.com/lavenderdotpet/LibreQuake']]) &&
       links.every(a=>a.target==='_blank' && a.relList.contains('noopener'));
   `);
-  await check("map 6 starts on Hard in both the actual engine and the selector", `
-    return qev.engine.snapshot().map === 'lq_e0m6' && qev.engine.snapshot().difficulty === 2 &&
-      document.querySelector('#map').value === 'lq_e0m6' && document.querySelector('#difficulty').value === '2' && !document.querySelector('#difficulty').disabled &&
+  await check("map 6 starts on Nightmare in both the actual engine and the selector", `
+    return qev.engine.snapshot().map === 'lq_e0m6' && qev.engine.snapshot().difficulty === 3 &&
+      document.querySelector('#map').value === 'lq_e0m6' && document.querySelector('#difficulty').value === '3' && !document.querySelector('#difficulty').disabled &&
+      document.querySelector('#asset-status').textContent.endsWith(' · Nightmare') &&
       [...document.querySelector('#difficulty').options].map(o=>o.value).join(',') === '0,1,2,3' && !document.querySelector('.intro');
   `);
   await checkModelSelection({ evaluate, check, until });

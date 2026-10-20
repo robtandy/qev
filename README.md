@@ -21,7 +21,7 @@ npm run serve
 
 Open **http://127.0.0.1:8090/**. Choose **Kev** or **Laya** to load it, then **Start**.
 **Stop** freezes the world; **Step** runs one decision; **Reset** restarts the current level stopped,
-keeping the model and settings. Gameplay has sound. The default is map 6 on Hard.
+keeping the model and settings. Gameplay has sound. The default is map 6 on Nightmare.
 See [How it works](#how-it-works) for the control policy and perception limits; the same policy is included in exported traces.
 
 Demo/Emscripten setup downloads verified assets and its toolchain into ignored `build/`.
@@ -110,7 +110,8 @@ npm run test:gameplay -- --model=laya --runs=3 --seconds=60
 npm run test:gameplay -- --model=kev-0.8b --runs=3 --seconds=60
 ```
 
-The gameplay test uses a separate instrumented engine, real models, the actual Hard level,
+The gameplay test uses a separate instrumented engine, real models, map 6 pinned to Hard
+(so results stay comparable with earlier runs, although the app now defaults to Nightmare),
 and muted browser output. It requires confirmed kills, actual movement, attacking, no long
 stalls, and survival. It **fails** if the player merely spends ammunition, camps, or dies.
 Test-only motion measurements are never supplied to the model. Reports/screenshots stay in

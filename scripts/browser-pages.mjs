@@ -69,7 +69,7 @@ try {
       title:document.title,logoLabel:document.querySelector('.brand-logo').alt,repo:document.querySelector('#repo-link').href,
       css:[...document.styleSheets].some(s=>s.href?.endsWith('/style.css')),
       normal:typeof qev.engine.module._qev_evaluation==='undefined',control:qev.engine.module._qev_control_version(),screen:qev.engine.module._qev_screen_version()};})()`);
-  assert.equal(info.snapshot.ready, true); assert.equal(info.snapshot.paused, true); assert.equal(info.snapshot.map, "lq_e0m6"); assert.equal(info.snapshot.difficulty, 2);
+  assert.equal(info.snapshot.ready, true); assert.equal(info.snapshot.paused, true); assert.equal(info.snapshot.map, "lq_e0m6"); assert.equal(info.snapshot.difficulty, 3);
   assert.deepEqual(info.runtime, KEVALA_RUNTIME);
   assert.equal(info.meta.kevala.revision, KEVALA_RUNTIME.revision);
   assert.equal(info.meta.kevala.packageVersion, KEVALA_RUNTIME.packageVersion);
@@ -86,7 +86,7 @@ try {
   if (expected) assert.equal(info.meta.commit, expected);
   if (options.url) assert.equal(info.meta.dirty, false, "Publish committed source, not a modified working tree");
   assert.ok(!requests.some(r => r.startsWith("https://huggingface.co/")), "Startup must not download a model");
-  console.log("PASS static project-path startup: CSS/logo, verified demo, normal engine, map 6/Hard, stopped without model downloads");
+  console.log("PASS static project-path startup: CSS/logo, verified demo, normal engine, map 6/Nightmare, stopped without model downloads");
   assert.equal(await evaluate(`(async()=>{const {prepareDecision}=await import(new URL('src/decisions.js',location.href).href);
     const s=qev.engine.snapshot(),r=prepareDecision(s);
     return r.requests.length===1 && Object.keys(r.requests[0].questions).join(',')==='action' &&
