@@ -152,12 +152,21 @@ try {
     return true;
   `);
   await checkBrandLayout('the tagline stays to the right of the steel logo without overlapping project links');
-  await check("the upper-right header links to the actual GitHub repo and reserves an X icon without a fake URL", `
+  await check("the upper-right GitHub logo links to the actual repo and an X icon is reserved without a fake URL", `
     const links=document.querySelector('.header-links'), repo=links.querySelector('#repo-link'), post=links.querySelector('#x-post-link');
+    const mark=repo.querySelector('svg'), box=mark?.getBoundingClientRect(), fill=getComputedStyle(mark?.querySelector('path')||repo).fill;
     return repo.href==='https://github.com/robtandy/qev' && repo.target==='_blank' && repo.relList.contains('noopener') &&
+      repo.textContent.trim()==='' && repo.getAttribute('aria-label')==='qev on GitHub' && mark?.getAttribute('aria-hidden')==='true' &&
+      box.width===20 && box.height===20 && fill==='rgb(200, 200, 200)' &&
       post.textContent==='𝕏' && post.getAttribute('aria-disabled')==='true' && !post.hasAttribute('href') &&
       links.getBoundingClientRect().left>document.querySelector('.brand').getBoundingClientRect().right;
   `);
+  const repoCenter = await evaluate(`(() => { const r = document.querySelector('#repo-link').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await call("Input.dispatchMouseEvent", { type: "mouseMoved", x: repoCenter.x, y: repoCenter.y });
+  await check("hovering the GitHub logo turns it white, never the green accent (GitHub logo guidelines)", `
+    return document.querySelector('#repo-link').matches(':hover') && getComputedStyle(document.querySelector('#repo-link path')).fill==='rgb(255, 255, 255)';
+  `);
+  await call("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
   await check("the footer credits all five projects with their actual links", `
     const footer=document.querySelector('footer.credits'), links=[...footer.querySelectorAll('a')];
     return footer.textContent.includes('Thanks to:') &&

@@ -25,6 +25,10 @@ kbd { font:10px var(--mono); opacity:.6; border:1px solid currentColor; padding:
 .header-links a { color:var(--muted); font-size:.77rem; text-decoration:none; }
 .header-links a[href]:hover { color:var(--accent); }
 .header-links .x-link { font:21px/1 system-ui,sans-serif; }
+/* GitHub's logo guidelines allow only white, black or grey: never the green accent. */
+.header-links .github-link { display:inline-flex; padding:2px; color:#c8c8c8; }
+.header-links a.github-link[href]:hover, .header-links a.github-link[href]:focus-visible { color:#fff; }
+.github-link svg { display:block; width:20px; height:20px; }
 .header-links [aria-disabled="true"] { opacity:.65; cursor:default; }
 main { max-width:1920px; margin:auto; padding:0 16px 10px; }
 .setup { border:1px solid var(--line); border-radius:9px; background:var(--surface); padding:6px 10px; margin-bottom:8px; }

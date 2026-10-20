@@ -143,6 +143,10 @@ test("the HTML keeps the card feed and compact controls without the old game pan
   assert.match(html, /<title>qev - quake played by a local decision model<\/title>/);
   assert.doesNotMatch(masthead, /class="mark"|qev-logo-bronze/);
   assert.match(masthead, /id="repo-link" href="https:\/\/github\.com\/robtandy\/qev"/);
+  const repoLink = masthead.match(/<a id="repo-link"[\s\S]*?<\/a>/)[0];
+  assert.match(repoLink, /aria-label="qev on GitHub"/);
+  assert.match(repoLink, /<svg viewBox="0 0 24 24"[^>]*aria-hidden="true"[^>]*><path fill="currentColor" d="M10\.226 17\.284c/);
+  assert.doesNotMatch(repoLink.replace(/<[^>]+>/g, ""), /\S/, "the GitHub link shows the logo, not text");
   const xLink = masthead.match(/<a id="x-post-link"[^>]*>𝕏<\/a>/)[0];
   assert.match(xLink, /aria-disabled="true"/);
   assert.doesNotMatch(xLink, /href=/);
