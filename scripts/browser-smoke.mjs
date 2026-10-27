@@ -152,19 +152,26 @@ try {
     return true;
   `);
   await checkBrandLayout('the tagline stays to the right of the steel logo without overlapping project links');
-  await check("the upper-right GitHub logo links to the actual repo and an X icon is reserved without a fake URL", `
+  await check("the upper-right GitHub logo links to the actual repo and the X icon to the actual post", `
     const links=document.querySelector('.header-links'), repo=links.querySelector('#repo-link'), post=links.querySelector('#x-post-link');
     const mark=repo.querySelector('svg'), box=mark?.getBoundingClientRect(), fill=getComputedStyle(mark?.querySelector('path')||repo).fill;
     return repo.href==='https://github.com/robtandy/qev' && repo.target==='_blank' && repo.relList.contains('noopener') &&
       repo.textContent.trim()==='' && repo.getAttribute('aria-label')==='qev on GitHub' && mark?.getAttribute('aria-hidden')==='true' &&
       box.width===20 && box.height===20 && fill==='rgb(200, 200, 200)' &&
-      post.textContent==='𝕏' && post.getAttribute('aria-disabled')==='true' && !post.hasAttribute('href') &&
+      post.textContent==='𝕏' && post.href==='https://x.com/shinyrobject/status/2115124416350941390' && post.target==='_blank' &&
+      post.relList.contains('noopener') && post.getAttribute('aria-label')==='qev post on X' && !post.hasAttribute('aria-disabled') &&
+      getComputedStyle(post).color==='rgb(200, 200, 200)' &&
       links.getBoundingClientRect().left>document.querySelector('.brand').getBoundingClientRect().right;
   `);
   const repoCenter = await evaluate(`(() => { const r = document.querySelector('#repo-link').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   await call("Input.dispatchMouseEvent", { type: "mouseMoved", x: repoCenter.x, y: repoCenter.y });
   await check("hovering the GitHub logo turns it white, never the green accent (GitHub logo guidelines)", `
     return document.querySelector('#repo-link').matches(':hover') && getComputedStyle(document.querySelector('#repo-link path')).fill==='rgb(255, 255, 255)';
+  `);
+  const postCenter = await evaluate(`(() => { const r = document.querySelector('#x-post-link').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await call("Input.dispatchMouseEvent", { type: "mouseMoved", x: postCenter.x, y: postCenter.y });
+  await check("hovering the X icon turns it white, never the green accent (X brand guidelines)", `
+    return document.querySelector('#x-post-link').matches(':hover') && getComputedStyle(document.querySelector('#x-post-link')).color==='rgb(255, 255, 255)';
   `);
   await call("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
   await check("the footer credits all five projects with their actual links", `
