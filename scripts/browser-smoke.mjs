@@ -158,7 +158,7 @@ try {
     return repo.href==='https://github.com/robtandy/qev' && repo.target==='_blank' && repo.relList.contains('noopener') &&
       repo.textContent.trim()==='' && repo.getAttribute('aria-label')==='qev on GitHub' && mark?.getAttribute('aria-hidden')==='true' &&
       box.width===20 && box.height===20 && fill==='rgb(200, 200, 200)' &&
-      post.textContent==='𝕏' && post.href==='https://x.com/shinyrobject/status/2115124416350941390' && post.target==='_blank' &&
+      post.textContent==='𝕏' && post.href==='https://x.com/shinyrobject/status/2115124326194393595' && post.target==='_blank' &&
       post.relList.contains('noopener') && post.getAttribute('aria-label')==='qev post on X' && !post.hasAttribute('aria-disabled') &&
       getComputedStyle(post).color==='rgb(200, 200, 200)' &&
       links.getBoundingClientRect().left>document.querySelector('.brand').getBoundingClientRect().right;

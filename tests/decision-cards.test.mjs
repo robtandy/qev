@@ -148,7 +148,7 @@ test("the HTML keeps the card feed and compact controls without the old game pan
   assert.match(repoLink, /<svg viewBox="0 0 24 24"[^>]*aria-hidden="true"[^>]*><path fill="currentColor" d="M10\.226 17\.284c/);
   assert.doesNotMatch(repoLink.replace(/<[^>]+>/g, ""), /\S/, "the GitHub link shows the logo, not text");
   const xLink = masthead.match(/<a id="x-post-link"[^>]*>𝕏<\/a>/)[0];
-  assert.match(xLink, /href="https:\/\/x\.com\/shinyrobject\/status\/2115124416350941390"/);
+  assert.match(xLink, /href="https:\/\/x\.com\/shinyrobject\/status\/2115124326194393595"/);
   assert.match(xLink, /target="_blank" rel="noopener noreferrer"/);
   assert.match(xLink, /aria-label="qev post on X"/);
   assert.doesNotMatch(xLink, /aria-disabled|role=/, "the X post link is live, not a placeholder");
